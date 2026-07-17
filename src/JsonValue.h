@@ -1,0 +1,40 @@
+#ifndef HAIKU_RADIO_JSON_VALUE_H
+#define HAIKU_RADIO_JSON_VALUE_H
+
+#include <map>
+#include <string>
+#include <utility>
+#include <vector>
+
+// Minimal recursive-descent JSON parser. No third-party dependency so the
+// project builds with nothing beyond a C++11 compiler and the Haiku SDK.
+// Only covers what radio-browser's /json/stations response needs: objects,
+// arrays, strings, numbers, booleans and null.
+class JsonValue {
+public:
+	enum class Type { Null, Boolean, Number, String, Array, Object };
+
+	Type type = Type::Null;
+	bool boolValue = false;
+	double numberValue = 0;
+	std::string stringValue;
+	std::vector<JsonValue> arrayValue;
+	std::vector<std::pair<std::string, JsonValue>> objectValue;
+
+	bool IsObject() const { return type == Type::Object; }
+	bool IsArray() const { return type == Type::Array; }
+	bool IsString() const { return type == Type::String; }
+
+	// Object member lookup. Returns nullptr if this isn't an object or the
+	// key is absent.
+	const JsonValue* Find(const std::string& key) const;
+
+	std::string AsString(const std::string& fallback = "") const;
+	double AsDouble(double fallback = 0) const;
+	int AsInt(int fallback = 0) const;
+
+	// Throws std::runtime_error with a position on malformed input.
+	static JsonValue Parse(const std::string& text);
+};
+
+#endif

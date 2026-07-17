@@ -1,0 +1,34 @@
+resource app_signature "application/x-vnd.RWorldRadio-Radio";
+
+resource app_name_catalog_entry "x-vnd.RWorldRadio-Radio:System name:R World Radio";
+
+resource app_version {
+	major	= 1,
+	middle	= 0,
+	minor	= 0,
+
+	/* 0 = development	1 = alpha		2 = beta
+	   3 = gamma		4 = golden master	5 = final */
+	variety	 = 0,
+	internal = 0,
+
+	short_info = "R World Radio",
+	long_info = "R World Radio - internet radio player for Haiku, "
+		"streaming stations from radio-browser and TuneIn"
+};
+
+/*
+ * Simple flat-color radio pictogram (body + speaker grille + tuning dial +
+ * antenna), hand-encoded as raw HVIF bytes - see DEVELOPING_GUIDE.md for how
+ * this was built and verified (round-tripped through an independent decoder
+ * before being committed here, since there was no way to render it directly
+ * from outside a Haiku environment). If this doesn't look right once built,
+ * that verification only proves the bytes are well-formed HVIF, not that
+ * the artwork looks good - regenerate via tools/make_icon.py and adjust the
+ * shape coordinates/colors there.
+ */
+resource vector_icon {
+	$"6E63696603031E284603D7D7DC03E68C28040A0428345834585428540A042E3A42"
+	$"3A424E2E4E0A04483C503C504448440A044C344E3456245424040A000100000A01"
+	$"0101000A020102000A00010300"
+};
