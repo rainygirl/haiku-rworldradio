@@ -2,6 +2,8 @@
 
 *[English version](README.md)*
 
+![screenshot](screenshot.png)
+
 **Haiku OS**(BeAPI) 전용 네이티브 인터넷 라디오 플레이어입니다. 미리 빌드되어 앱에 번들된 방송국 데이터셋(`data/`, radio-browser)을 읽어 국가별로 분류하고, 클릭 시 앱 내부에서 바로 재생합니다 - 별도의 외부 플레이어 프로세스가 없고, 실제 오디오 스트리밍 외에는 네트워크에 전혀 접근하지 않습니다.
 
 > **Haiku OS 전용입니다.** 이 앱은 Haiku 고유 API(Media Kit, 클래식 Network Kit, app_info/BEntry, BAdapterIO)를 직접 사용하므로 macOS, Linux, Windows에서는 빌드도 실행도 되지 않습니다. 실제 Haiku x86_64 nightly(gcc13)를 QEMU에서 구동하여 빌드/검증했습니다.

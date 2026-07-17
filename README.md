@@ -2,6 +2,8 @@
 
 *[한국어 버전](README.ko.md)*
 
+![screenshot](screenshot.png)
+
 Native internet radio player for **Haiku OS** (BeAPI). Reads a pre-built, bundled station dataset (`data/`) groups it by country, and plays a station in-process when clicked - no external player process, and no network access at all except to actually stream audio.
 
 > **Haiku OS only.** This app uses Haiku-specific APIs (Media Kit, the classic Network Kit, app_info/BEntry, BAdapterIO) directly and will not build or run on macOS, Linux, or Windows. It has been built and verified running on a real Haiku x86_64 nightly (gcc13) in QEMU.
