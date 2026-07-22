@@ -18,19 +18,19 @@ HlsAdapterIO::HlsAdapterIO(const std::string& playlistUrl)
 	:
 	BAdapterIO(B_MEDIA_STREAMING | B_MEDIA_SEEKABLE, kHlsTimeout),
 	fPlaylistUrl(playlistUrl),
-	fInputAdapter(nullptr),
+	fInputAdapter(NULL),
 	fWorkerThread(-1),
 	fInitSem(create_sem(0, "hls-adapter-init")),
 	fInitReleased(false),
 	fInitSucceeded(false),
-	fStopRequested(false),
-	fRunning(false)
+	fStopRequested(0),
+	fRunning(0)
 {
 }
 
 HlsAdapterIO::~HlsAdapterIO()
 {
-	fStopRequested = true;
+	atomic_set(&fStopRequested, 1);
 	if (fWorkerThread >= 0) {
 		status_t exitValue;
 		wait_for_thread(fWorkerThread, &exitValue);
@@ -67,7 +67,7 @@ HlsAdapterIO::Open()
 bool
 HlsAdapterIO::IsRunning() const
 {
-	return fRunning.load();
+	return atomic_get(&fRunning) != 0;
 }
 
 status_t
@@ -90,14 +90,14 @@ HlsAdapterIO::ReleaseInitOnce(bool success)
 void
 HlsAdapterIO::RunWorker()
 {
-	fRunning = true;
+	atomic_set(&fRunning, 1);
 
 	std::string mediaPlaylistUrl = fPlaylistUrl;
 
 	NetworkFetch::Result initial = NetworkFetch::Get(fPlaylistUrl);
 	if (!initial.ok) {
 		ReleaseInitOnce(false);
-		fRunning = false;
+		atomic_set(&fRunning, 0);
 		return;
 	}
 
@@ -109,20 +109,20 @@ HlsAdapterIO::RunWorker()
 			= M3u8Parser::ParseMasterPlaylist(initial.body, fPlaylistUrl);
 		if (variants.empty()) {
 			ReleaseInitOnce(false);
-			fRunning = false;
+			atomic_set(&fRunning, 0);
 			return;
 		}
 		const M3u8Parser::Variant* best = &variants[0];
-		for (const M3u8Parser::Variant& variant : variants) {
-			if (variant.bandwidth > best->bandwidth)
-				best = &variant;
+		for (size_t i = 0; i < variants.size(); i++) {
+			if (variants[i].bandwidth > best->bandwidth)
+				best = &variants[i];
 		}
 		mediaPlaylistUrl = best->uri;
 	}
 
 	std::set<std::string> seenSegments;
 
-	while (!fStopRequested.load()) {
+	while (atomic_get(&fStopRequested) == 0) {
 		NetworkFetch::Result playlistFetch = NetworkFetch::Get(mediaPlaylistUrl);
 		if (!playlistFetch.ok) {
 			ReleaseInitOnce(false); // only takes effect if never succeeded yet
@@ -134,8 +134,9 @@ HlsAdapterIO::RunWorker()
 			= M3u8Parser::ParseMediaPlaylist(playlistFetch.body, mediaPlaylistUrl);
 
 		bool wroteAny = false;
-		for (const M3u8Parser::Segment& segment : playlist.segments) {
-			if (fStopRequested.load())
+		for (size_t i = 0; i < playlist.segments.size(); i++) {
+			const M3u8Parser::Segment& segment = playlist.segments[i];
+			if (atomic_get(&fStopRequested) != 0)
 				break;
 			if (seenSegments.count(segment.uri) != 0)
 				continue;
@@ -157,7 +158,7 @@ HlsAdapterIO::RunWorker()
 
 		if (playlist.isEndList)
 			break;
-		if (fStopRequested.load())
+		if (atomic_get(&fStopRequested) != 0)
 			break;
 
 		if (!wroteAny) {
@@ -178,5 +179,5 @@ HlsAdapterIO::RunWorker()
 	}
 
 	ReleaseInitOnce(false); // no-op if we already succeeded above
-	fRunning = false;
+	atomic_set(&fRunning, 0);
 }

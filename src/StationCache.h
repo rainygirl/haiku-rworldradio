@@ -15,9 +15,11 @@
 class StationCache {
 public:
 	struct LoadResult {
-		bool ok = false;
+		bool ok;
 		std::string error;
-		std::map<std::string, std::vector<Station>> byCountry;
+		std::map<std::string, std::vector<Station> > byCountry;
+
+		LoadResult() : ok(false) {}
 	};
 
 	static LoadResult Load();

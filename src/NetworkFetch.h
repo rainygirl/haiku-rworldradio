@@ -6,10 +6,12 @@
 namespace NetworkFetch {
 
 struct Result {
-	bool ok = false;
-	int httpStatus = 0;
+	bool ok;
+	int httpStatus;
 	std::string body;
 	std::string error;
+
+	Result() : ok(false), httpStatus(0) {}
 };
 
 // Blocking GET. Spawns the request on Haiku's Network Kit thread and joins

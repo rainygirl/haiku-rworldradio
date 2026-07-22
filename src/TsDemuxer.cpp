@@ -7,9 +7,11 @@ namespace {
 const size_t kPacketSize = 188;
 
 struct PacketInfo {
-	int pid = 0;
-	bool payloadStart = false;
+	int pid;
+	bool payloadStart;
 	std::string payload; // TS header (and adaptation field, if any) stripped
+
+	PacketInfo() : pid(0), payloadStart(false) {}
 };
 
 std::vector<PacketInfo>
@@ -44,7 +46,7 @@ ParsePackets(const std::string& data)
 		info.pid = pid;
 		info.payloadStart = payloadStart;
 		info.payload = data.substr(pos + payloadOffset, kPacketSize - payloadOffset);
-		packets.push_back(std::move(info));
+		packets.push_back(info);
 		pos += kPacketSize;
 	}
 	return packets;
@@ -53,7 +55,8 @@ ParsePackets(const std::string& data)
 int
 FindPmtPid(const std::vector<PacketInfo>& packets)
 {
-	for (const PacketInfo& pkt : packets) {
+	for (size_t pktIdx = 0; pktIdx < packets.size(); pktIdx++) {
+		const PacketInfo& pkt = packets[pktIdx];
 		if (pkt.pid != 0 || !pkt.payloadStart || pkt.payload.size() < 9)
 			continue;
 		const unsigned char* raw
@@ -78,15 +81,18 @@ FindPmtPid(const std::vector<PacketInfo>& packets)
 }
 
 struct AudioStreamInfo {
-	int pid = -1;
-	TsDemuxer::AudioCodec codec = TsDemuxer::AudioCodec::Unknown;
+	int pid;
+	TsDemuxer::AudioCodec codec;
+
+	AudioStreamInfo() : pid(-1), codec(TsDemuxer::Unknown) {}
 };
 
 AudioStreamInfo
 FindAudioStream(const std::vector<PacketInfo>& packets, int pmtPid)
 {
 	AudioStreamInfo info;
-	for (const PacketInfo& pkt : packets) {
+	for (size_t pktIdx = 0; pktIdx < packets.size(); pktIdx++) {
+		const PacketInfo& pkt = packets[pktIdx];
 		if (pkt.pid != pmtPid || !pkt.payloadStart || pkt.payload.size() < 13)
 			continue;
 		const unsigned char* raw
@@ -106,12 +112,12 @@ FindAudioStream(const std::vector<PacketInfo>& packets, int pmtPid)
 			int elementaryPid = ((section[idx + 1] & 0x1F) << 8) | section[idx + 2];
 			int esInfoLength = ((section[idx + 3] & 0x0F) << 8) | section[idx + 4];
 
-			TsDemuxer::AudioCodec codec = TsDemuxer::AudioCodec::Unknown;
+			TsDemuxer::AudioCodec codec = TsDemuxer::Unknown;
 			if (streamType == 0x0F)
-				codec = TsDemuxer::AudioCodec::AdtsAac;
+				codec = TsDemuxer::AdtsAac;
 			else if (streamType == 0x03 || streamType == 0x04)
-				codec = TsDemuxer::AudioCodec::MpegAudio;
-			if (codec != TsDemuxer::AudioCodec::Unknown && info.pid < 0) {
+				codec = TsDemuxer::MpegAudio;
+			if (codec != TsDemuxer::Unknown && info.pid < 0) {
 				info.pid = elementaryPid;
 				info.codec = codec;
 			}
@@ -141,7 +147,8 @@ Extract(const std::string& tsData)
 		return result;
 
 	result.codec = audio.codec;
-	for (const PacketInfo& pkt : packets) {
+	for (size_t pktIdx = 0; pktIdx < packets.size(); pktIdx++) {
+		const PacketInfo& pkt = packets[pktIdx];
 		if (pkt.pid != audio.pid)
 			continue;
 		if (pkt.payloadStart) {

@@ -7,10 +7,10 @@
 #include <SoundPlayer.h>
 #include <Url.h>
 
-#include <atomic>
+#include <Autolock.h>
+
 #include <cctype>
 #include <cmath>
-#include <cstdint>
 #include <cstdio>
 #include <cstring>
 
@@ -45,8 +45,8 @@ IsHlsUrl(const std::string& url)
 	if (path.size() < 5)
 		return false;
 	std::string suffix = path.substr(path.size() - 5);
-	for (char& c : suffix)
-		c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+	for (size_t i = 0; i < suffix.size(); i++)
+		suffix[i] = static_cast<char>(tolower(static_cast<unsigned char>(suffix[i])));
 	return suffix == ".m3u8";
 }
 
@@ -88,7 +88,7 @@ PeakLevel(const void* buffer, size_t sampleCount, uint32 format)
 		}
 		case media_raw_audio_format::B_AUDIO_SHORT:
 		{
-			const int16_t* samples = static_cast<const int16_t*>(buffer);
+			const int16* samples = static_cast<const int16*>(buffer);
 			for (size_t i = 0; i < sampleCount; i++) {
 				float v = fabsf(samples[i] / 32768.0f);
 				if (v > peak)
@@ -98,7 +98,7 @@ PeakLevel(const void* buffer, size_t sampleCount, uint32 format)
 		}
 		case media_raw_audio_format::B_AUDIO_INT:
 		{
-			const int32_t* samples = static_cast<const int32_t*>(buffer);
+			const int32* samples = static_cast<const int32*>(buffer);
 			for (size_t i = 0; i < sampleCount; i++) {
 				float v = fabsf(samples[i] / 2147483648.0f);
 				if (v > peak)
@@ -108,7 +108,7 @@ PeakLevel(const void* buffer, size_t sampleCount, uint32 format)
 		}
 		case media_raw_audio_format::B_AUDIO_UCHAR:
 		{
-			const uint8_t* samples = static_cast<const uint8_t*>(buffer);
+			const uint8* samples = static_cast<const uint8*>(buffer);
 			for (size_t i = 0; i < sampleCount; i++) {
 				float v = fabsf((static_cast<int>(samples[i]) - 128) / 128.0f);
 				if (v > peak)
@@ -122,6 +122,24 @@ PeakLevel(const void* buffer, size_t sampleCount, uint32 format)
 	return peak > 1.0f ? 1.0f : peak;
 }
 
+// IEEE-754 bit-pattern round trip so a float can be stored/loaded with
+// Haiku's atomic_set()/atomic_get() (int32-only, no std::atomic pre-C++11).
+int32
+FloatToBits(float v)
+{
+	int32 bits;
+	memcpy(&bits, &v, sizeof(bits));
+	return bits;
+}
+
+float
+BitsToFloat(int32 bits)
+{
+	float v;
+	memcpy(&v, &bits, sizeof(v));
+	return v;
+}
+
 } // namespace
 
 // BMediaFile(const BUrl&) hands the URL to Haiku's own Streamer add-on
@@ -133,50 +151,142 @@ PeakLevel(const void* buffer, size_t sampleCount, uint32 format)
 // even when the underlying bytes are perfectly valid MP3/AAC. Letting
 // BMediaFile drive the network I/O itself sidesteps that entirely.
 struct RadioPlayer::Session {
-	std::unique_ptr<BMediaFile> mediaFile;
-	BMediaTrack* track = nullptr;
-	std::unique_ptr<BSoundPlayer> soundPlayer;
+	BMediaFile* mediaFile;
+	BMediaTrack* track;
+	BSoundPlayer* soundPlayer;
 
 	// Only set for HLS stations. BMediaFile(BDataIO*) does NOT take
 	// ownership of the source the way BMediaFile(BUrl)/BMediaFile(entry_ref)
 	// do (confirmed in Haiku's MediaFile.cpp: fDeleteSource is only set to
 	// true for those two, never for the raw-BDataIO* constructor) - so
 	// unlike mediaFile, this needs to be deleted here, not by BMediaFile.
-	std::unique_ptr<HlsAdapterIO> hlsIo;
+	HlsAdapterIO* hlsIo;
 
 	std::string stationName;
 
 	// Updated on every PlayBufferProc call, polled from the UI thread via
-	// RadioPlayer::CurrentLevel() for the level meter.
-	std::atomic<float> level{0.0f};
+	// RadioPlayer::CurrentLevel() for the level meter - an IEEE-754 bit
+	// pattern read/written via atomic_set()/atomic_get() (see FloatToBits/
+	// BitsToFloat above).
+	int32 levelBits;
+
+	Session()
+		:
+		mediaFile(NULL),
+		track(NULL),
+		soundPlayer(NULL),
+		hlsIo(NULL),
+		levelBits(0)
+	{
+	}
 
 	~Session()
 	{
 		// BSoundPlayer::Stop() blocks until its play thread is idle, so this
 		// is safe to do before releasing the track it was reading from.
-		if (soundPlayer)
+		if (soundPlayer != NULL)
 			soundPlayer->Stop();
-		soundPlayer.reset();
+		delete soundPlayer;
+		soundPlayer = NULL;
 
-		if (mediaFile && track)
+		if (mediaFile != NULL && track != NULL)
 			mediaFile->ReleaseTrack(track);
-		track = nullptr;
-		mediaFile.reset(); // must go before hlsIo - it reads from hlsIo
-		hlsIo.reset();
+		track = NULL;
+		delete mediaFile; // must go before hlsIo - it reads from hlsIo
+		mediaFile = NULL;
+		delete hlsIo;
+		hlsIo = NULL;
 	}
 };
+
+RadioPlayer::SessionPtr::SessionPtr()
+	:
+	fSession(NULL),
+	fRefCount(NULL)
+{
+}
+
+RadioPlayer::SessionPtr::SessionPtr(Session* session)
+	:
+	fSession(session),
+	fRefCount(session != NULL ? new int32(1) : NULL)
+{
+}
+
+RadioPlayer::SessionPtr::SessionPtr(const SessionPtr& other)
+	:
+	fSession(other.fSession),
+	fRefCount(other.fRefCount)
+{
+	Acquire();
+}
+
+RadioPlayer::SessionPtr&
+RadioPlayer::SessionPtr::operator=(const SessionPtr& other)
+{
+	if (this != &other) {
+		Release();
+		fSession = other.fSession;
+		fRefCount = other.fRefCount;
+		Acquire();
+	}
+	return *this;
+}
+
+RadioPlayer::SessionPtr::~SessionPtr()
+{
+	Release();
+}
+
+void
+RadioPlayer::SessionPtr::Acquire()
+{
+	if (fRefCount != NULL)
+		atomic_add(fRefCount, 1);
+}
+
+void
+RadioPlayer::SessionPtr::Release()
+{
+	// atomic_add() returns the value from BEFORE the add, so a result of 1
+	// means this was the last outstanding reference.
+	if (fRefCount != NULL && atomic_add(fRefCount, -1) == 1) {
+		delete fSession;
+		delete fRefCount;
+	}
+	fSession = NULL;
+	fRefCount = NULL;
+}
+
+void
+RadioPlayer::SessionPtr::Reset()
+{
+	Release();
+}
 
 namespace {
 
 struct SetupArgs {
 	RadioPlayer* self;
-	std::shared_ptr<RadioPlayer::Session>* session;
+	RadioPlayer::SessionPtr* session;
 	Station station;
 	uint64 generation;
+
+	SetupArgs(RadioPlayer* s, RadioPlayer::SessionPtr* sess,
+		const Station& st, uint64 gen)
+		:
+		self(s),
+		session(sess),
+		station(st),
+		generation(gen)
+	{
+	}
 };
 
 struct TeardownArgs {
-	std::shared_ptr<RadioPlayer::Session>* session;
+	RadioPlayer::SessionPtr* session;
+
+	explicit TeardownArgs(RadioPlayer::SessionPtr* s) : session(s) {}
 };
 
 } // namespace
@@ -196,7 +306,7 @@ RadioPlayer::~RadioPlayer()
 bool
 RadioPlayer::IsCurrent(uint64 generation)
 {
-	std::lock_guard<std::mutex> lock(fMutex);
+	BAutolock lock(fMutex);
 	return generation == fGeneration;
 }
 
@@ -212,11 +322,11 @@ RadioPlayer::EmitStatus(State state, const std::string& stationName,
 }
 
 void
-RadioPlayer::DetachTeardown(std::shared_ptr<Session> session)
+RadioPlayer::DetachTeardown(SessionPtr session)
 {
 	if (!session)
 		return;
-	auto* args = new TeardownArgs{new std::shared_ptr<Session>(std::move(session))};
+	TeardownArgs* args = new TeardownArgs(new SessionPtr(session));
 	thread_id t = spawn_thread(&RadioPlayer::TeardownThreadEntry,
 		"radio-teardown", B_NORMAL_PRIORITY, args);
 	if (t < 0) {
@@ -232,8 +342,8 @@ RadioPlayer::DetachTeardown(std::shared_ptr<Session> session)
 status_t
 RadioPlayer::TeardownThreadEntry(void* cookie)
 {
-	auto* args = static_cast<TeardownArgs*>(cookie);
-	args->session->reset();
+	TeardownArgs* args = static_cast<TeardownArgs*>(cookie);
+	args->session->Reset();
 	delete args->session;
 	delete args;
 	return B_OK;
@@ -242,23 +352,23 @@ RadioPlayer::TeardownThreadEntry(void* cookie)
 void
 RadioPlayer::Play(const Station& station)
 {
-	auto session = std::make_shared<Session>();
+	SessionPtr session(new Session());
 	session->stationName = station.name;
 
-	std::shared_ptr<Session> old;
+	SessionPtr old;
 	uint64 generation;
 	{
-		std::lock_guard<std::mutex> lock(fMutex);
+		BAutolock lock(fMutex);
 		old = fSession;
 		fSession = session;
 		generation = ++fGeneration;
 	}
-	DetachTeardown(std::move(old));
+	DetachTeardown(old);
 
 	EmitStatus(kConnecting, station.name, "");
 
-	auto* sessionHolder = new std::shared_ptr<Session>(session);
-	auto* args = new SetupArgs{this, sessionHolder, station, generation};
+	SessionPtr* sessionHolder = new SessionPtr(session);
+	SetupArgs* args = new SetupArgs(this, sessionHolder, station, generation);
 	thread_id t = spawn_thread(&RadioPlayer::SetupThreadEntry, "radio-setup",
 		B_NORMAL_PRIORITY, args);
 	if (t < 0) {
@@ -273,15 +383,15 @@ RadioPlayer::Play(const Station& station)
 void
 RadioPlayer::Stop()
 {
-	std::shared_ptr<Session> old;
+	SessionPtr old;
 	{
-		std::lock_guard<std::mutex> lock(fMutex);
-		old = std::move(fSession);
-		fSession.reset();
+		BAutolock lock(fMutex);
+		old = fSession;
+		fSession.Reset();
 		++fGeneration;
 	}
 	if (old) {
-		DetachTeardown(std::move(old));
+		DetachTeardown(old);
 		EmitStatus(kStopped, "", "");
 	}
 }
@@ -289,21 +399,20 @@ RadioPlayer::Stop()
 status_t
 RadioPlayer::SetupThreadEntry(void* cookie)
 {
-	auto* args = static_cast<SetupArgs*>(cookie);
+	SetupArgs* args = static_cast<SetupArgs*>(cookie);
 	RadioPlayer* self = args->self;
-	std::shared_ptr<Session> session = std::move(*args->session);
-	Station station = std::move(args->station);
+	SessionPtr session = *args->session;
+	Station station = args->station;
 	uint64 generation = args->generation;
 	delete args->session;
 	delete args;
 
-	self->RunSetup(std::move(session), std::move(station), generation);
+	self->RunSetup(session, station, generation);
 	return B_OK;
 }
 
 void
-RadioPlayer::RunSetup(std::shared_ptr<Session> session, Station station,
-	uint64 generation)
+RadioPlayer::RunSetup(SessionPtr session, Station station, uint64 generation)
 {
 	if (!IsCurrent(generation))
 		return;
@@ -328,7 +437,7 @@ RadioPlayer::RunSetup(std::shared_ptr<Session> session, Station station,
 		return;
 
 	if (IsHlsUrl(streamUrl)) {
-		session->hlsIo.reset(new HlsAdapterIO(streamUrl));
+		session->hlsIo = new HlsAdapterIO(streamUrl);
 		// BMediaFile(BDataIO*) never calls Open() on an arbitrary source -
 		// that only happens automatically inside BMediaFile(BUrl)'s own
 		// internal streamer setup. We're bypassing that (there's no add-on
@@ -340,12 +449,13 @@ RadioPlayer::RunSetup(std::shared_ptr<Session> session, Station station,
 			char detail[160];
 			snprintf(detail, sizeof(detail), "could not open HLS stream: %s (0x%08lx)",
 				strerror(openErr), (long)openErr);
-			session->hlsIo.reset();
+			delete session->hlsIo;
+			session->hlsIo = NULL;
 			if (IsCurrent(generation))
 				EmitStatus(kError, station.name, detail);
 			return;
 		}
-		session->mediaFile.reset(new BMediaFile(session->hlsIo.get()));
+		session->mediaFile = new BMediaFile(session->hlsIo);
 	} else {
 		BUrl url(streamUrl.c_str());
 		if (!url.IsValid()) {
@@ -353,7 +463,7 @@ RadioPlayer::RunSetup(std::shared_ptr<Session> session, Station station,
 				EmitStatus(kError, station.name, "invalid stream URL");
 			return;
 		}
-		session->mediaFile.reset(new BMediaFile(url));
+		session->mediaFile = new BMediaFile(url);
 	}
 	status_t initErr = session->mediaFile->InitCheck();
 	if (initErr != B_OK) {
@@ -370,10 +480,10 @@ RadioPlayer::RunSetup(std::shared_ptr<Session> session, Station station,
 
 	int32 trackCount = session->mediaFile->CountTracks();
 
-	BMediaTrack* track = nullptr;
+	BMediaTrack* track = NULL;
 	for (int32 i = 0; i < trackCount; i++) {
 		BMediaTrack* candidate = session->mediaFile->TrackAt(i);
-		if (candidate == nullptr)
+		if (candidate == NULL)
 			continue;
 		media_format format = {};
 		status_t encErr = candidate->EncodedFormat(&format);
@@ -383,7 +493,7 @@ RadioPlayer::RunSetup(std::shared_ptr<Session> session, Station station,
 		}
 		session->mediaFile->ReleaseTrack(candidate);
 	}
-	if (track == nullptr) {
+	if (track == NULL) {
 		if (IsCurrent(generation))
 			EmitStatus(kError, station.name, "no audio track in stream");
 		return;
@@ -399,16 +509,16 @@ RadioPlayer::RunSetup(std::shared_ptr<Session> session, Station station,
 		return;
 	}
 
-	auto* player = new BSoundPlayer(&requested.u.raw_audio,
-		station.name.c_str(), &RadioPlayer::PlayBufferProc, nullptr,
-		session.get());
+	BSoundPlayer* player = new BSoundPlayer(&requested.u.raw_audio,
+		station.name.c_str(), &RadioPlayer::PlayBufferProc, NULL,
+		session.Get());
 	if (player->InitCheck() != B_OK) {
 		delete player;
 		if (IsCurrent(generation))
 			EmitStatus(kError, station.name, "could not open audio output");
 		return;
 	}
-	session->soundPlayer.reset(player);
+	session->soundPlayer = player;
 
 	if (!IsCurrent(generation))
 		return; // superseded while we were buffering; let it be torn down
@@ -424,12 +534,12 @@ void
 RadioPlayer::PlayBufferProc(void* cookie, void* buffer, size_t size,
 	const media_raw_audio_format& format)
 {
-	auto* session = static_cast<Session*>(cookie);
+	Session* session = static_cast<Session*>(cookie);
 	size_t sampleSize = BytesPerSample(format.format);
 	size_t frameSize = sampleSize * format.channel_count;
-	if (frameSize == 0 || session->track == nullptr) {
+	if (frameSize == 0 || session->track == NULL) {
 		memset(buffer, 0, size);
-		session->level.store(0.0f);
+		atomic_set(&session->levelBits, FloatToBits(0.0f));
 		return;
 	}
 
@@ -442,12 +552,13 @@ RadioPlayer::PlayBufferProc(void* cookie, void* buffer, size_t size,
 		memset(static_cast<char*>(buffer) + producedBytes, 0, size - producedBytes);
 
 	size_t producedSamples = producedBytes / sampleSize;
-	session->level.store(PeakLevel(buffer, producedSamples, format.format));
+	atomic_set(&session->levelBits,
+		FloatToBits(PeakLevel(buffer, producedSamples, format.format)));
 }
 
 float
 RadioPlayer::CurrentLevel() const
 {
-	std::lock_guard<std::mutex> lock(fMutex);
-	return fSession ? fSession->level.load() : 0.0f;
+	BAutolock lock(fMutex);
+	return fSession ? BitsToFloat(atomic_get(&fSession->levelBits)) : 0.0f;
 }

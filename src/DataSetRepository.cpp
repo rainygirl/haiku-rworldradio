@@ -12,7 +12,8 @@ ParseCountryIndex(const std::string& json)
 	if (!root.IsArray())
 		return entries;
 
-	for (const JsonValue& item : root.arrayValue) {
+	for (size_t i = 0; i < root.arrayValue.size(); i++) {
+		const JsonValue& item = root.arrayValue[i];
 		if (!item.IsObject())
 			continue;
 		CountryEntry entry;
@@ -24,7 +25,7 @@ ParseCountryIndex(const std::string& json)
 			entry.count = v->AsInt();
 		if (entry.name.empty() || entry.file.empty())
 			continue;
-		entries.push_back(std::move(entry));
+		entries.push_back(entry);
 	}
 	return entries;
 }
@@ -38,7 +39,8 @@ ParseCountryStations(const std::string& json, const std::string& countryName)
 		return stations;
 
 	stations.reserve(root.arrayValue.size());
-	for (const JsonValue& item : root.arrayValue) {
+	for (size_t i = 0; i < root.arrayValue.size(); i++) {
+		const JsonValue& item = root.arrayValue[i];
 		if (!item.IsObject())
 			continue;
 
@@ -55,13 +57,13 @@ ParseCountryStations(const std::string& json, const std::string& countryName)
 		if (const JsonValue* v = item.Find("language"))
 			station.language = v->AsString();
 		if (const JsonValue* v = item.Find("needsResolve"))
-			station.needsTuneInResolve = v->type == JsonValue::Type::Boolean && v->boolValue;
+			station.needsTuneInResolve = v->type == JsonValue::Boolean && v->boolValue;
 
 		const JsonValue* latValue = item.Find("lat");
 		const JsonValue* lonValue = item.Find("lon");
-		if (latValue != nullptr && lonValue != nullptr
-				&& latValue->type == JsonValue::Type::Number
-				&& lonValue->type == JsonValue::Type::Number) {
+		if (latValue != NULL && lonValue != NULL
+				&& latValue->type == JsonValue::Number
+				&& lonValue->type == JsonValue::Number) {
 			station.lat = latValue->numberValue;
 			station.lon = lonValue->numberValue;
 			station.hasLocation = true;
@@ -69,7 +71,7 @@ ParseCountryStations(const std::string& json, const std::string& countryName)
 
 		if (station.name.empty() || station.url.empty())
 			continue;
-		stations.push_back(std::move(station));
+		stations.push_back(station);
 	}
 	return stations;
 }

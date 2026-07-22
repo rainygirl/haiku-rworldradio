@@ -15,7 +15,9 @@ namespace DataSetRepository {
 struct CountryEntry {
 	std::string name;
 	std::string file;
-	int count = 0;
+	int count;
+
+	CountryEntry() : count(0) {}
 };
 
 // Parses data/countries.json.

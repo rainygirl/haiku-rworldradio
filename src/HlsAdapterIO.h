@@ -3,8 +3,8 @@
 
 #include <AdapterIO.h>
 #include <OS.h>
+#include <SupportDefs.h>
 
-#include <atomic>
 #include <string>
 
 // Bridges a live HLS audio stream (radio-browser's BBC-style .m3u8 entries)
@@ -44,8 +44,11 @@ private:
 	sem_id fInitSem;
 	bool fInitReleased;
 	bool fInitSucceeded;
-	std::atomic<bool> fStopRequested;
-	std::atomic<bool> fRunning;
+
+	// Plain 0/1 flags read/written across the worker thread and the caller,
+	// via Haiku's atomic_set()/atomic_get() (no std::atomic pre-C++11).
+	int32 fStopRequested;
+	mutable int32 fRunning;
 };
 
 #endif

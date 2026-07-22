@@ -1,5 +1,7 @@
 #include "NetworkFetch.h"
 
+#include <cstdio>
+
 #include <DataIO.h>
 #include <Errors.h>
 #include <HttpResult.h>
@@ -8,8 +10,6 @@
 #include <UrlProtocolListener.h>
 #include <UrlProtocolRoster.h>
 #include <UrlRequest.h>
-
-#include <memory>
 
 // See the matching comment in RadioPlayer.cpp: these classes live in
 // BPrivate::Network on Haiku builds where the classic Url Kit was moved to
@@ -54,9 +54,8 @@ Result Get(const std::string& url)
 	BufferSink sink;
 	// BHttpRequest's constructor is private - BUrlProtocolRoster::MakeRequest
 	// is the only way to create a request, returned as the base BUrlRequest.
-	std::unique_ptr<BUrlRequest> request(
-		BUrlProtocolRoster::MakeRequest(parsedUrl, &sink));
-	if (!request) {
+	BUrlRequest* request = BUrlProtocolRoster::MakeRequest(parsedUrl, &sink);
+	if (request == NULL) {
 		result.error = "failed to create request";
 		return result;
 	}
@@ -64,6 +63,7 @@ Result Get(const std::string& url)
 	thread_id requestThread = request->Run();
 	if (requestThread < 0) {
 		result.error = "failed to start request";
+		delete request;
 		return result;
 	}
 
@@ -73,14 +73,17 @@ Result Get(const std::string& url)
 	const BHttpResult& httpResult
 		= static_cast<const BHttpResult&>(request->Result());
 	result.httpStatus = httpResult.StatusCode();
-	result.body = std::move(sink.body);
+	result.body = sink.body;
 	result.ok = (result.httpStatus >= 200 && result.httpStatus < 300)
 		&& !result.body.empty();
 
 	if (!result.ok && result.error.empty()) {
-		result.error = "HTTP status " + std::to_string(result.httpStatus);
+		char status[16];
+		snprintf(status, sizeof(status), "%d", result.httpStatus);
+		result.error = "HTTP status " + std::string(status);
 	}
 
+	delete request;
 	return result;
 }
 

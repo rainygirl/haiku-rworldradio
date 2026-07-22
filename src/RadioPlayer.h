@@ -1,12 +1,11 @@
 #ifndef HAIKU_RADIO_RADIO_PLAYER_H
 #define HAIKU_RADIO_RADIO_PLAYER_H
 
+#include <Locker.h>
 #include <MediaDefs.h>
 #include <Messenger.h>
 #include <SupportDefs.h>
 
-#include <memory>
-#include <mutex>
 #include <string>
 
 #include "Station.h"
@@ -50,26 +49,53 @@ public:
 	// Opaque; defined in RadioPlayer.cpp. Public only so the free-standing
 	// SetupArgs/TeardownArgs helper structs in that .cpp file (not members
 	// of RadioPlayer, so private access wouldn't extend to them) can name
-	// std::shared_ptr<Session>. The definition itself stays out of this
-	// header either way.
+	// SessionPtr. The definition itself stays out of this header either way.
 	struct Session;
+
+	// Minimal thread-safe reference-counted pointer to a Session, replacing
+	// std::shared_ptr (not available pre-C++11) - refcount updates use
+	// Haiku's atomic_add() so Play()/Stop() and the setup/teardown threads
+	// can safely hand a Session off to each other. The special member
+	// functions are declared here but defined in RadioPlayer.cpp, where
+	// Session is a complete type (the same reason a Pimpl's unique_ptr needs
+	// an out-of-line destructor).
+	class SessionPtr {
+	public:
+		SessionPtr();
+		explicit SessionPtr(Session* session);
+		SessionPtr(const SessionPtr& other);
+		SessionPtr& operator=(const SessionPtr& other);
+		~SessionPtr();
+
+		Session* operator->() const { return fSession; }
+		Session& operator*() const { return *fSession; }
+		Session* Get() const { return fSession; }
+		operator bool() const { return fSession != NULL; }
+		void Reset();
+
+	private:
+		void Acquire();
+		void Release();
+
+		Session* fSession;
+		int32* fRefCount;
+	};
 
 private:
 	bool IsCurrent(uint64 generation);
 	void EmitStatus(State state, const std::string& stationName,
 		const std::string& detail);
-	void DetachTeardown(std::shared_ptr<Session> session);
+	void DetachTeardown(SessionPtr session);
 
 	static status_t SetupThreadEntry(void* cookie);
 	static status_t TeardownThreadEntry(void* cookie);
-	void RunSetup(std::shared_ptr<Session> session, Station station,
-		uint64 generation);
+	void RunSetup(SessionPtr session, Station station, uint64 generation);
 	static void PlayBufferProc(void* cookie, void* buffer, size_t size,
 		const media_raw_audio_format& format);
 
 	BMessenger fStatusTarget;
-	mutable std::mutex fMutex;
-	std::shared_ptr<Session> fSession;
+	mutable BLocker fMutex;
+	SessionPtr fSession;
 	uint64 fGeneration;
 };
 

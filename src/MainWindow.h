@@ -52,7 +52,7 @@ private:
 	// a friendly codec name/bitrate the way the dataset record already does.
 	Station fCurrentStation;
 
-	std::map<std::string, std::vector<Station>> fStationsByCountry;
+	std::map<std::string, std::vector<Station> > fStationsByCountry;
 	RadioPlayer fPlayer;
 };
 

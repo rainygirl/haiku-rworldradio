@@ -30,7 +30,7 @@ CandidateDataDirs()
 	std::vector<std::string> candidates;
 
 	app_info info;
-	if (be_app != nullptr && be_app->GetAppInfo(&info) == B_OK) {
+	if (be_app != NULL && be_app->GetAppInfo(&info) == B_OK) {
 		BEntry entry(&info.ref);
 		BPath execPath;
 		if (entry.GetPath(&execPath) == B_OK) {
@@ -57,7 +57,9 @@ CandidateDataDirs()
 std::string
 StationCache::FindDataDir()
 {
-	for (const std::string& candidate : CandidateDataDirs()) {
+	std::vector<std::string> candidates = CandidateDataDirs();
+	for (size_t i = 0; i < candidates.size(); i++) {
+		const std::string& candidate = candidates[i];
 		BEntry probe((candidate + "/countries.json").c_str());
 		if (probe.Exists())
 			return candidate;
@@ -106,14 +108,15 @@ StationCache::Load()
 		return result;
 	}
 
-	for (const auto& entry : countries) {
+	for (size_t i = 0; i < countries.size(); i++) {
+		const DataSetRepository::CountryEntry& entry = countries[i];
 		std::string stationsJson;
 		if (!ReadFile(dataDir + "/countries/" + entry.file, stationsJson))
 			continue; // skip a missing/unreadable country file, keep going
 		std::vector<Station> stations
 			= DataSetRepository::ParseCountryStations(stationsJson, entry.name);
 		if (!stations.empty())
-			result.byCountry[entry.name] = std::move(stations);
+			result.byCountry[entry.name] = stations;
 	}
 
 	result.ok = !result.byCountry.empty();

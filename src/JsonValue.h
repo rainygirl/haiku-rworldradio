@@ -12,20 +12,22 @@
 // arrays, strings, numbers, booleans and null.
 class JsonValue {
 public:
-	enum class Type { Null, Boolean, Number, String, Array, Object };
+	enum Type { Null, Boolean, Number, String, Array, Object };
 
-	Type type = Type::Null;
-	bool boolValue = false;
-	double numberValue = 0;
+	Type type;
+	bool boolValue;
+	double numberValue;
 	std::string stringValue;
 	std::vector<JsonValue> arrayValue;
-	std::vector<std::pair<std::string, JsonValue>> objectValue;
+	std::vector<std::pair<std::string, JsonValue> > objectValue;
 
-	bool IsObject() const { return type == Type::Object; }
-	bool IsArray() const { return type == Type::Array; }
-	bool IsString() const { return type == Type::String; }
+	JsonValue() : type(Null), boolValue(false), numberValue(0) {}
 
-	// Object member lookup. Returns nullptr if this isn't an object or the
+	bool IsObject() const { return type == Object; }
+	bool IsArray() const { return type == Array; }
+	bool IsString() const { return type == String; }
+
+	// Object member lookup. Returns NULL if this isn't an object or the
 	// key is absent.
 	const JsonValue* Find(const std::string& key) const;
 

@@ -27,8 +27,10 @@ private:
 
 	void Fail(const std::string& message)
 	{
+		char offset[32];
+		snprintf(offset, sizeof(offset), "%lu", static_cast<unsigned long>(fPos));
 		throw std::runtime_error("JSON parse error at offset "
-			+ std::to_string(fPos) + ": " + message);
+			+ std::string(offset) + ": " + message);
 	}
 
 	char Peek()
@@ -96,7 +98,7 @@ private:
 	{
 		Expect('{');
 		JsonValue value;
-		value.type = JsonValue::Type::Object;
+		value.type = JsonValue::Object;
 		SkipWhitespace();
 		if (Peek() == '}') {
 			Next();
@@ -108,7 +110,8 @@ private:
 			SkipWhitespace();
 			Expect(':');
 			JsonValue member = ParseValue();
-			value.objectValue.emplace_back(key.stringValue, std::move(member));
+			value.objectValue.push_back(
+				std::make_pair(key.stringValue, member));
 			SkipWhitespace();
 			char c = Next();
 			if (c == ',')
@@ -124,7 +127,7 @@ private:
 	{
 		Expect('[');
 		JsonValue value;
-		value.type = JsonValue::Type::Array;
+		value.type = JsonValue::Array;
 		SkipWhitespace();
 		if (Peek() == ']') {
 			Next();
@@ -184,7 +187,7 @@ private:
 	{
 		Expect('"');
 		JsonValue value;
-		value.type = JsonValue::Type::String;
+		value.type = JsonValue::String;
 		std::string& out = value.stringValue;
 		while (true) {
 			char c = Next();
@@ -244,15 +247,15 @@ private:
 				fPos++;
 		}
 		JsonValue value;
-		value.type = JsonValue::Type::Number;
-		value.numberValue = strtod(fText.substr(start, fPos - start).c_str(), nullptr);
+		value.type = JsonValue::Number;
+		value.numberValue = strtod(fText.substr(start, fPos - start).c_str(), NULL);
 		return value;
 	}
 
 	JsonValue ParseBoolean()
 	{
 		JsonValue value;
-		value.type = JsonValue::Type::Boolean;
+		value.type = JsonValue::Boolean;
 		if (Consume("true"))
 			value.boolValue = true;
 		else if (Consume("false"))
@@ -283,21 +286,21 @@ private:
 const JsonValue*
 JsonValue::Find(const std::string& key) const
 {
-	if (type != Type::Object)
-		return nullptr;
-	for (const auto& member : objectValue) {
-		if (member.first == key)
-			return &member.second;
+	if (type != Object)
+		return NULL;
+	for (size_t i = 0; i < objectValue.size(); i++) {
+		if (objectValue[i].first == key)
+			return &objectValue[i].second;
 	}
-	return nullptr;
+	return NULL;
 }
 
 std::string
 JsonValue::AsString(const std::string& fallback) const
 {
-	if (type == Type::String)
+	if (type == String)
 		return stringValue;
-	if (type == Type::Number) {
+	if (type == Number) {
 		// radio-browser occasionally sends numeric-looking fields as
 		// strings and vice versa; normalize to a plain string.
 		char buffer[64];
@@ -310,10 +313,10 @@ JsonValue::AsString(const std::string& fallback) const
 double
 JsonValue::AsDouble(double fallback) const
 {
-	if (type == Type::Number)
+	if (type == Number)
 		return numberValue;
-	if (type == Type::String)
-		return strtod(stringValue.c_str(), nullptr);
+	if (type == String)
+		return strtod(stringValue.c_str(), NULL);
 	return fallback;
 }
 

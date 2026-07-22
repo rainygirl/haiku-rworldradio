@@ -12,19 +12,25 @@ namespace M3u8Parser {
 
 struct Variant {
 	std::string uri;
-	int bandwidth = 0;
+	int bandwidth;
+
+	Variant() : bandwidth(0) {}
 };
 
 struct Segment {
 	std::string uri;
-	double duration = 0;
+	double duration;
+
+	Segment() : duration(0) {}
 };
 
 struct MediaPlaylist {
 	std::vector<Segment> segments;
-	long mediaSequence = 0;
-	double targetDuration = 6;
-	bool isEndList = false;
+	long mediaSequence;
+	double targetDuration;
+	bool isEndList;
+
+	MediaPlaylist() : mediaSequence(0), targetDuration(6), isEndList(false) {}
 };
 
 // Resolves a possibly-relative URI against a base URL. Handles the cases

@@ -14,15 +14,17 @@
 // than carrying PID state across segments.
 namespace TsDemuxer {
 
-enum class AudioCodec {
+enum AudioCodec {
 	Unknown,
 	AdtsAac,
 	MpegAudio, // MP3/MP2 (stream_type 0x03/0x04)
 };
 
 struct Result {
-	AudioCodec codec = AudioCodec::Unknown;
+	AudioCodec codec;
 	std::string elementaryStream;
+
+	Result() : codec(Unknown) {}
 };
 
 Result Extract(const std::string& tsData);

@@ -22,9 +22,9 @@ SplitLines(const std::string& text)
 		size_t newline = text.find('\n', start);
 		std::string line = (newline == std::string::npos)
 			? text.substr(start) : text.substr(start, newline - start);
-		while (!line.empty() && (line.back() == '\r'
-				|| isspace(static_cast<unsigned char>(line.back()))))
-			line.pop_back();
+		while (!line.empty() && (line[line.size() - 1] == '\r'
+				|| isspace(static_cast<unsigned char>(line[line.size() - 1]))))
+			line.resize(line.size() - 1);
 		lines.push_back(line);
 		if (newline == std::string::npos)
 			break;
@@ -118,7 +118,8 @@ ParseMediaPlaylist(const std::string& text, const std::string& baseUrl)
 	std::vector<std::string> lines = SplitLines(text);
 	double nextDuration = 0;
 
-	for (const std::string& line : lines) {
+	for (size_t i = 0; i < lines.size(); i++) {
+		const std::string& line = lines[i];
 		if (StartsWith(line, "#EXT-X-MEDIA-SEQUENCE:")) {
 			playlist.mediaSequence = atol(line.c_str() + strlen("#EXT-X-MEDIA-SEQUENCE:"));
 		} else if (StartsWith(line, "#EXT-X-TARGETDURATION:")) {

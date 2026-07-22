@@ -1,5 +1,7 @@
 #include "MainWindow.h"
 
+#include <cstdio>
+
 #include <Application.h>
 #include <Button.h>
 #include <LayoutBuilder.h>
@@ -36,6 +38,8 @@ public:
 
 struct LoadArgs {
 	MainWindow* window;
+
+	explicit LoadArgs(MainWindow* w) : window(w) {}
 };
 
 // e.g. "MP3 128kbps", "AAC", "128kbps", or "" if neither is known.
@@ -46,7 +50,9 @@ FormatCodecBitrate(const Station& station)
 	if (station.bitrate > 0) {
 		if (!text.empty())
 			text += " ";
-		text += std::to_string(station.bitrate) + "kbps";
+		char bitrate[16];
+		snprintf(bitrate, sizeof(bitrate), "%d", station.bitrate);
+		text += std::string(bitrate) + "kbps";
 	}
 	return text;
 }
@@ -57,14 +63,14 @@ MainWindow::MainWindow()
 	:
 	BWindow(BRect(80, 80, 780, 580), "R World Radio", B_TITLED_WINDOW,
 		B_ASYNCHRONOUS_CONTROLS),
-	fCountryListView(nullptr),
-	fStationListView(nullptr),
-	fStatusView(nullptr),
-	fStopButton(nullptr),
-	fNowPlayingView(nullptr),
-	fFormatView(nullptr),
-	fLevelMeter(nullptr),
-	fLevelRunner(nullptr),
+	fCountryListView(NULL),
+	fStationListView(NULL),
+	fStatusView(NULL),
+	fStopButton(NULL),
+	fNowPlayingView(NULL),
+	fFormatView(NULL),
+	fLevelMeter(NULL),
+	fLevelRunner(NULL),
 	fPlayer(BMessenger(this))
 {
 	BMenuBar* menuBar = new BMenuBar("menubar");
@@ -141,7 +147,7 @@ void
 MainWindow::StartLoad()
 {
 	SetStatusText("Loading stations...");
-	auto* args = new LoadArgs{this};
+	LoadArgs* args = new LoadArgs(this);
 	thread_id t = spawn_thread(&MainWindow::LoadThreadEntry, "station-load",
 		B_NORMAL_PRIORITY, args);
 	if (t < 0) {
@@ -155,14 +161,14 @@ MainWindow::StartLoad()
 status_t
 MainWindow::LoadThreadEntry(void* cookie)
 {
-	auto* args = static_cast<LoadArgs*>(cookie);
+	LoadArgs* args = static_cast<LoadArgs*>(cookie);
 	MainWindow* window = args->window;
 	delete args;
 
 	StationCache::LoadResult result = StationCache::Load();
 
 	BMessage msg(kMsgLoadDone);
-	msg.AddPointer("result", new StationCache::LoadResult(std::move(result)));
+	msg.AddPointer("result", new StationCache::LoadResult(result));
 	BMessenger(window).SendMessage(&msg);
 	return B_OK;
 }
@@ -172,8 +178,9 @@ MainWindow::PopulateCountries()
 {
 	fCountryListView->MakeEmpty();
 	fStationListView->MakeEmpty();
-	for (const auto& entry : fStationsByCountry)
-		fCountryListView->AddItem(new BStringItem(entry.first.c_str()));
+	for (std::map<std::string, std::vector<Station> >::const_iterator it
+			= fStationsByCountry.begin(); it != fStationsByCountry.end(); ++it)
+		fCountryListView->AddItem(new BStringItem(it->first.c_str()));
 
 	if (fCountryListView->CountItems() > 0) {
 		fCountryListView->Select(0);
@@ -191,15 +198,16 @@ MainWindow::PopulateStationsForSelectedCountry()
 		return;
 	BStringItem* countryItem
 		= static_cast<BStringItem*>(fCountryListView->ItemAt(index));
-	if (countryItem == nullptr)
+	if (countryItem == NULL)
 		return;
 
-	auto it = fStationsByCountry.find(countryItem->Text());
+	std::map<std::string, std::vector<Station> >::const_iterator it
+		= fStationsByCountry.find(countryItem->Text());
 	if (it == fStationsByCountry.end())
 		return;
 
-	for (const Station& station : it->second)
-		fStationListView->AddItem(new StationItem(station));
+	for (size_t i = 0; i < it->second.size(); i++)
+		fStationListView->AddItem(new StationItem(it->second[i]));
 }
 
 void
@@ -215,9 +223,9 @@ MainWindow::MessageReceived(BMessage* message)
 			int32 index = fStationListView->CurrentSelection();
 			if (index < 0)
 				break;
-			auto* item
+			StationItem* item
 				= static_cast<StationItem*>(fStationListView->ItemAt(index));
-			if (item == nullptr)
+			if (item == NULL)
 				break;
 			fCurrentStation = item->station;
 			fPlayer.Play(item->station);
@@ -230,14 +238,17 @@ MainWindow::MessageReceived(BMessage* message)
 
 		case kMsgLoadDone:
 		{
-			StationCache::LoadResult* result = nullptr;
+			StationCache::LoadResult* result = NULL;
 			if (message->FindPointer("result", reinterpret_cast<void**>(&result))
-					== B_OK && result != nullptr) {
+					== B_OK && result != NULL) {
 				if (result->ok) {
-					fStationsByCountry = std::move(result->byCountry);
+					fStationsByCountry = result->byCountry;
 					PopulateCountries();
+					char countText[16];
+					snprintf(countText, sizeof(countText), "%lu",
+						static_cast<unsigned long>(fStationsByCountry.size()));
 					std::string status = "Loaded "
-						+ std::to_string(fStationsByCountry.size()) + " countries";
+						+ std::string(countText) + " countries";
 					if (!result->error.empty())
 						status += " (" + result->error + ")";
 					SetStatusText(status);

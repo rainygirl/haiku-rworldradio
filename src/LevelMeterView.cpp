@@ -27,9 +27,9 @@ LevelMeterView::SetLevel(float level)
 void
 LevelMeterView::GetPreferredSize(float* width, float* height)
 {
-	if (width != nullptr)
+	if (width != NULL)
 		*width = 80;
-	if (height != nullptr)
+	if (height != NULL)
 		*height = 18;
 }
 
