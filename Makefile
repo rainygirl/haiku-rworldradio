@@ -39,9 +39,29 @@ RSRCS =
 # TYPE=APP (see its STDCPPLIBS comment) - without them, anything needing an
 # out-of-line libstdc++ symbol (e.g. vector reallocation, __throw_length_error)
 # fails at link time even though most std::string/vector usage is inlined.
+#
+# The legacy x86 secondary architecture ("gcc2", BeOS-ABI-compatible,
+# objects.x86-cc2-release) needs a completely different C++ runtime setup
+# than the primary x86_64/gcc13 build:
+# - plain "-lstdc++" resolves to /boot/system/lib/x86/libstdc++.so, which is
+#   the MODERN gcc13 x86 build's libstdc++ (wrong ABI for gcc2 objects) - the
+#   gcc2-ABI one is the ".r4"-suffixed file that sits directly in the normal
+#   lib dirs (Haiku's convention for this specific legacy secondary arch),
+#   found by searching: find /boot/system -iname "libstdc++*".
+# - "-lsupc++" doesn't exist at all for gcc2: GCC 2.95 predates the
+#   libstdc++/libsupc++ split (that happened around GCC 3.x), so linking it
+#   would itself fail with "cannot find -lsupc++".
+GCC_VERSION := $(shell g++ -dumpversion)
+ifeq ($(filter 2.%,$(GCC_VERSION)),)
 LIBS = be tracker network bnetapi media stdc++ supc++ \
 	/boot/system/develop/lib/libnetservices.a \
 	/boot/system/develop/lib/libshared.a
+else
+LIBS = be tracker network bnetapi media \
+	/boot/system/develop/lib/libstdc++.r4.so \
+	/boot/system/develop/lib/libnetservices.a \
+	/boot/system/develop/lib/libshared.a
+endif
 
 LIBPATHS =
 # BUrlRequest/BHttpRequest/BUrlProtocolListener live under the private
