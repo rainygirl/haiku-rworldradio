@@ -27,11 +27,11 @@
 class HlsAdapterIO : public BAdapterIO {
 public:
 	explicit HlsAdapterIO(const std::string& playlistUrl);
-	~HlsAdapterIO() override;
+	~HlsAdapterIO();
 
-	void GetFlags(int32* flags) const override;
-	status_t Open() override;
-	bool IsRunning() const override;
+	void GetFlags(int32* flags) const;
+	status_t Open();
+	bool IsRunning() const;
 
 private:
 	static status_t WorkerThreadEntry(void* cookie);

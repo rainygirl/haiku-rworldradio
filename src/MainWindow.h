@@ -19,10 +19,10 @@ class LevelMeterView;
 class MainWindow : public BWindow {
 public:
 	MainWindow();
-	~MainWindow() override;
+	~MainWindow();
 
-	void MessageReceived(BMessage* message) override;
-	bool QuitRequested() override;
+	void MessageReceived(BMessage* message);
+	bool QuitRequested();
 
 private:
 	static const uint32 kMsgCountrySelected = 'ctSl';

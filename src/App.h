@@ -7,7 +7,7 @@ class App : public BApplication {
 public:
 	App();
 
-	void ReadyToRun() override;
+	void ReadyToRun();
 };
 
 #endif

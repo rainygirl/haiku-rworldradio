@@ -25,13 +25,13 @@ class BufferSink : public BDataIO {
 public:
 	std::string body;
 
-	ssize_t Write(const void* buffer, size_t size) override
+	ssize_t Write(const void* buffer, size_t size)
 	{
 		body.append(static_cast<const char*>(buffer), size);
 		return static_cast<ssize_t>(size);
 	}
 
-	ssize_t Read(void*, size_t) override
+	ssize_t Read(void*, size_t)
 	{
 		return B_NOT_ALLOWED;
 	}

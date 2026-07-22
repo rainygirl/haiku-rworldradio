@@ -16,8 +16,8 @@ public:
 
 	void SetLevel(float level);
 
-	void Draw(BRect updateRect) override;
-	void GetPreferredSize(float* width, float* height) override;
+	void Draw(BRect updateRect);
+	void GetPreferredSize(float* width, float* height);
 
 private:
 	float fLevel;
