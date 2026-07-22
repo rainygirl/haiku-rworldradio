@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include <cstdio>
+#include <exception>
 
 #include <Application.h>
 #include <Button.h>
@@ -165,7 +166,21 @@ MainWindow::LoadThreadEntry(void* cookie)
 	MainWindow* window = args->window;
 	delete args;
 
-	StationCache::LoadResult result = StationCache::Load();
+	// JsonValue::Parse() throws std::runtime_error on malformed input - an
+	// exception escaping a spawned thread's entry function is fatal (Haiku,
+	// like any C++ program, calls std::terminate()/abort() for that), so a
+	// single bad/truncated country file must not be allowed to crash the
+	// whole app. Report it as a normal failed LoadResult instead.
+	StationCache::LoadResult result;
+	try {
+		result = StationCache::Load();
+	} catch (const std::exception& e) {
+		result.ok = false;
+		result.error = std::string("station data parse error: ") + e.what();
+	} catch (...) {
+		result.ok = false;
+		result.error = "station data parse error: unknown exception";
+	}
 
 	BMessage msg(kMsgLoadDone);
 	msg.AddPointer("result", new StationCache::LoadResult(result));
