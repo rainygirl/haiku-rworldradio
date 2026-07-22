@@ -45,7 +45,10 @@ Result Get(const std::string& url)
 {
 	Result result;
 
-	BUrl parsedUrl(url.c_str());
+	// Explicit second argument: this Haiku SDK's Url.h declares both
+	// BUrl(const char*, bool = true) and a legacy BUrl(const char*)
+	// overload, which is ambiguous with a single argument.
+	BUrl parsedUrl(url.c_str(), true);
 	if (!parsedUrl.IsValid()) {
 		result.error = "invalid URL";
 		return result;

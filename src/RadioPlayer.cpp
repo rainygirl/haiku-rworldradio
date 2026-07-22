@@ -457,7 +457,10 @@ RadioPlayer::RunSetup(SessionPtr session, Station station, uint64 generation)
 		}
 		session->mediaFile = new BMediaFile(session->hlsIo);
 	} else {
-		BUrl url(streamUrl.c_str());
+		// Explicit second argument: this Haiku SDK's Url.h declares both
+		// BUrl(const char*, bool = true) and a legacy BUrl(const char*)
+		// overload, which is ambiguous with a single argument.
+		BUrl url(streamUrl.c_str(), true);
 		if (!url.IsValid()) {
 			if (IsCurrent(generation))
 				EmitStatus(kError, station.name, "invalid stream URL");
@@ -485,7 +488,8 @@ RadioPlayer::RunSetup(SessionPtr session, Station station, uint64 generation)
 		BMediaTrack* candidate = session->mediaFile->TrackAt(i);
 		if (candidate == NULL)
 			continue;
-		media_format format = {};
+		media_format format;
+		memset(&format, 0, sizeof(format));
 		status_t encErr = candidate->EncodedFormat(&format);
 		if (encErr == B_OK && format.IsAudio()) {
 			track = candidate;
@@ -500,7 +504,8 @@ RadioPlayer::RunSetup(SessionPtr session, Station station, uint64 generation)
 	}
 	session->track = track;
 
-	media_format requested = {};
+	media_format requested;
+	memset(&requested, 0, sizeof(requested));
 	requested.type = B_MEDIA_RAW_AUDIO;
 	status_t decErr = track->DecodedFormat(&requested);
 	if (decErr != B_OK) {
