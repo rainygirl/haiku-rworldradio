@@ -44,10 +44,13 @@ struct LoadArgs {
 };
 
 // e.g. "MP3 128kbps", "AAC", "128kbps", or "" if neither is known.
+// radio-browser uses the literal string "UNKNOWN" for stations whose codec
+// it couldn't determine - treat that the same as an empty/unknown codec
+// rather than showing the placeholder text to the user.
 std::string
 FormatCodecBitrate(const Station& station)
 {
-	std::string text = station.codec;
+	std::string text = station.codec == "UNKNOWN" ? "" : station.codec;
 	if (station.bitrate > 0) {
 		if (!text.empty())
 			text += " ";
