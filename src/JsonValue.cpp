@@ -66,12 +66,21 @@ private:
 
 	bool Consume(const char* literal)
 	{
+		// Deliberately not std::string::compare(pos, n, const char*) here -
+		// that overload misbehaved under this Haiku build's legacy gcc2
+		// libstdc++.r4.so (confirmed: "false"/"true"/"null" literals in a
+		// real dataset all failed to match, throwing "invalid literal" on
+		// perfectly valid JSON) - a plain character-by-character loop has
+		// no such dependency and is correct on any C++ implementation.
 		size_t len = strlen(literal);
-		if (fText.compare(fPos, len, literal) == 0) {
-			fPos += len;
-			return true;
+		if (fPos + len > fText.size())
+			return false;
+		for (size_t i = 0; i < len; i++) {
+			if (fText[fPos + i] != literal[i])
+				return false;
 		}
-		return false;
+		fPos += len;
+		return true;
 	}
 
 	JsonValue ParseValue()

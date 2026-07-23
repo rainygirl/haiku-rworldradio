@@ -9,8 +9,18 @@ namespace {
 bool
 StartsWith(const std::string& s, const char* prefix)
 {
+	// Plain char-by-char loop, not std::string::compare(pos, n, const
+	// char*) - that overload misbehaved under this Haiku build's legacy
+	// gcc2 libstdc++.r4.so (see the matching comment in JsonValue.cpp's
+	// Consume()).
 	size_t len = strlen(prefix);
-	return s.compare(0, len, prefix) == 0;
+	if (len > s.size())
+		return false;
+	for (size_t i = 0; i < len; i++) {
+		if (s[i] != prefix[i])
+			return false;
+	}
+	return true;
 }
 
 std::vector<std::string>
