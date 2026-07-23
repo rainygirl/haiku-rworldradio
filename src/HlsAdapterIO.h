@@ -33,12 +33,18 @@ public:
 	status_t Open();
 	bool IsRunning() const;
 
+	// Set when Open() fails (i.e. the worker never wrote a single segment)
+	// - a short reason (playlist fetch failed, no variants, etc.) so the
+	// caller can show something more useful than a bare status_t.
+	const std::string& InitError() const { return fInitError; }
+
 private:
 	static status_t WorkerThreadEntry(void* cookie);
 	void RunWorker();
-	void ReleaseInitOnce(bool success);
+	void ReleaseInitOnce(bool success, const std::string& error = std::string());
 
 	std::string fPlaylistUrl;
+	std::string fInitError;
 	BInputAdapter* fInputAdapter;
 	thread_id fWorkerThread;
 	sem_id fInitSem;

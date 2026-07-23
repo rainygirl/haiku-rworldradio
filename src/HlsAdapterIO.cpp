@@ -78,12 +78,14 @@ HlsAdapterIO::WorkerThreadEntry(void* cookie)
 }
 
 void
-HlsAdapterIO::ReleaseInitOnce(bool success)
+HlsAdapterIO::ReleaseInitOnce(bool success, const std::string& error)
 {
 	if (fInitReleased)
 		return;
 	fInitReleased = true;
 	fInitSucceeded = success;
+	if (!success)
+		fInitError = error;
 	release_sem(fInitSem);
 }
 
@@ -96,7 +98,8 @@ HlsAdapterIO::RunWorker()
 
 	NetworkFetch::Result initial = NetworkFetch::Get(fPlaylistUrl);
 	if (!initial.ok) {
-		ReleaseInitOnce(false);
+		ReleaseInitOnce(false, "could not fetch playlist: "
+			+ (initial.error.empty() ? std::string("unknown error") : initial.error));
 		atomic_set(&fRunning, 0);
 		return;
 	}
@@ -108,7 +111,7 @@ HlsAdapterIO::RunWorker()
 		std::vector<M3u8Parser::Variant> variants
 			= M3u8Parser::ParseMasterPlaylist(initial.body, fPlaylistUrl);
 		if (variants.empty()) {
-			ReleaseInitOnce(false);
+			ReleaseInitOnce(false, "master playlist has no variants");
 			atomic_set(&fRunning, 0);
 			return;
 		}
@@ -121,11 +124,15 @@ HlsAdapterIO::RunWorker()
 	}
 
 	std::set<std::string> seenSegments;
+	std::string lastSegmentIssue = "no segments were listed in the media playlist";
 
 	while (atomic_get(&fStopRequested) == 0) {
 		NetworkFetch::Result playlistFetch = NetworkFetch::Get(mediaPlaylistUrl);
 		if (!playlistFetch.ok) {
-			ReleaseInitOnce(false); // only takes effect if never succeeded yet
+			// only takes effect if never succeeded yet
+			ReleaseInitOnce(false, "could not fetch media playlist: "
+				+ (playlistFetch.error.empty()
+					? std::string("unknown error") : playlistFetch.error));
 			snooze(2000000);
 			continue;
 		}
@@ -143,12 +150,19 @@ HlsAdapterIO::RunWorker()
 			seenSegments.insert(segment.uri);
 
 			NetworkFetch::Result segmentFetch = NetworkFetch::Get(segment.uri);
-			if (!segmentFetch.ok)
+			if (!segmentFetch.ok) {
+				lastSegmentIssue = "segment fetch failed: "
+					+ (segmentFetch.error.empty()
+						? std::string("unknown error") : segmentFetch.error);
 				continue;
+			}
 
 			TsDemuxer::Result demuxed = TsDemuxer::Extract(segmentFetch.body);
-			if (demuxed.elementaryStream.empty())
+			if (demuxed.elementaryStream.empty()) {
+				lastSegmentIssue = "segment produced no audio elementary "
+					"stream (unsupported codec/container?)";
 				continue;
+			}
 
 			fInputAdapter->Write(demuxed.elementaryStream.data(),
 				demuxed.elementaryStream.size());
@@ -178,6 +192,6 @@ HlsAdapterIO::RunWorker()
 			seenSegments.clear();
 	}
 
-	ReleaseInitOnce(false); // no-op if we already succeeded above
+	ReleaseInitOnce(false, lastSegmentIssue); // no-op if we already succeeded above
 	atomic_set(&fRunning, 0);
 }

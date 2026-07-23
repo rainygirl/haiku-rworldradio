@@ -446,9 +446,11 @@ RadioPlayer::RunSetup(SessionPtr session, Station station, uint64 generation)
 		// stream fails - has to be called explicitly here.
 		status_t openErr = session->hlsIo->Open();
 		if (openErr != B_OK) {
-			char detail[160];
-			snprintf(detail, sizeof(detail), "could not open HLS stream: %s (0x%08lx)",
-				strerror(openErr), (long)openErr);
+			std::string reason = session->hlsIo->InitError();
+			char detail[220];
+			snprintf(detail, sizeof(detail), "could not open HLS stream: %s (0x%08lx)%s%s",
+				strerror(openErr), (long)openErr,
+				reason.empty() ? "" : " - ", reason.c_str());
 			delete session->hlsIo;
 			session->hlsIo = NULL;
 			if (IsCurrent(generation))
