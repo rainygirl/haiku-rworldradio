@@ -32,6 +32,7 @@ data/
   countries.json            index: [{name, file, count}, ...]
   countries/<slug>.json     per-country station arrays
 Makefile                    Haiku makefile-engine build file
+install.sh                  builds and installs into Deskbar's Applications menu
 ```
 
 ## Requirements
@@ -54,7 +55,13 @@ If the linker complains about undefined references, check the `LIBS` / `SYSTEM_I
 
 ## Installing into the Applications menu
 
-Haiku's Deskbar Applications menu lists whatever is in `~/config/non-packaged/apps/` directly, so `data/` must NOT sit next to the binary there (it would show up as a spurious folder entry in the menu) - it goes in the parallel `non-packaged/data/RWorldRadio` convention instead:
+```
+./install.sh
+```
+
+Builds the app (via `make`) and symlinks it into Deskbar's Applications menu. Re-run it any time after pulling new source or regenerating `data/` - it's safe to run repeatedly.
+
+Under the hood, this is just:
 
 ```
 mkdir -p ~/config/non-packaged/apps
@@ -62,7 +69,7 @@ ln -s /path/to/objects.*/rworldradio ~/config/non-packaged/apps/rworldradio
 ln -s /path/to/data ~/config/non-packaged/data/RWorldRadio
 ```
 
-(Symlinks so a rebuild doesn't need re-copying; plain `cp`/`cp -r` works too if you'd rather not keep the project directory around.)
+Haiku's Deskbar Applications menu lists whatever is in `~/config/non-packaged/apps/` directly, so `data/` must NOT sit next to the binary there (it would show up as a spurious folder entry in the menu) - it goes in the parallel `non-packaged/data/RWorldRadio` convention instead. (Symlinks so a rebuild doesn't need re-copying; plain `cp`/`cp -r` works too if you'd rather not keep the project directory around.)
 
 ## Keeping the dataset current
 

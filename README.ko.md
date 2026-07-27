@@ -33,6 +33,7 @@ data/
   countries.json            인덱스: [{name, file, count}, ...]
   countries/<slug>.json     국가별 방송국 배열
 Makefile                    Haiku makefile-engine 빌드 파일
+install.sh                  빌드 후 Deskbar Applications 메뉴에 설치
 ```
 
 ## 요구 사항
@@ -55,7 +56,13 @@ make
 
 ## Applications 메뉴에 설치하기
 
-Haiku의 Deskbar Applications 메뉴는 `~/config/non-packaged/apps/`에 있는 항목을 그대로 나열하므로, 이 위치에서는 `data/`가 바이너리 옆에 있으면 안 됩니다(메뉴에 엉뚱한 폴더 항목으로 나타남) - 대신 병렬 구조인 `non-packaged/data/RWorldRadio` 규칙을 사용합니다:
+```
+./install.sh
+```
+
+앱을 빌드(`make`)한 뒤 Deskbar의 Applications 메뉴에 심볼릭 링크로 연결합니다. 소스를 새로 받거나 `data/`를 재생성했을 때 다시 실행해도 안전합니다.
+
+내부적으로는 이 작업을 합니다:
 
 ```
 mkdir -p ~/config/non-packaged/apps
@@ -63,7 +70,7 @@ ln -s /path/to/objects.*/rworldradio ~/config/non-packaged/apps/rworldradio
 ln -s /path/to/data ~/config/non-packaged/data/RWorldRadio
 ```
 
-(재빌드 시 다시 복사할 필요가 없도록 심볼릭 링크를 사용합니다; 프로젝트 디렉터리를 유지하고 싶지 않다면 `cp`/`cp -r`로 그냥 복사해도 됩니다.)
+Haiku의 Deskbar Applications 메뉴는 `~/config/non-packaged/apps/`에 있는 항목을 그대로 나열하므로, 이 위치에서는 `data/`가 바이너리 옆에 있으면 안 됩니다(메뉴에 엉뚱한 폴더 항목으로 나타남) - 대신 병렬 구조인 `non-packaged/data/RWorldRadio` 규칙을 사용합니다. (재빌드 시 다시 복사할 필요가 없도록 심볼릭 링크를 사용합니다; 프로젝트 디렉터리를 유지하고 싶지 않다면 `cp`/`cp -r`로 그냥 복사해도 됩니다.)
 
 ## 데이터셋 최신 상태로 유지하기
 
