@@ -3,12 +3,24 @@
 # Applications menu. Run this on Haiku, from anywhere:
 #   ./install.sh
 #
-# Deskbar's Applications menu lists whatever sits directly inside
-# ~/config/non-packaged/apps/, so data/ must NOT be linked next to the
-# binary there - it would show up as a spurious extra menu entry. It goes
-# in the parallel non-packaged/data/RWorldRadio convention instead. See
-# README.md's "Installing into the Applications menu" for the manual
-# equivalent of what this script does.
+# Deskbar's Applications menu is NOT driven by ~/config/non-packaged/apps/
+# (that was tried and confirmed NOT to work) - it's a plain directory of
+# symlinks at /boot/system/data/deskbar/menu/Applications/ (see e.g. the
+# OpenTTD/Vim entries already there on a real system). That path itself is
+# read-only (packagefs), so a non-packaged addition goes in the mirrored
+# /boot/system/non-packaged/data/deskbar/menu/Applications/ directory
+# instead, which packagefs merges into the read-only view above.
+#
+# Confirmed on real hardware/QEMU: that merge is NOT picked up live, even
+# after restarting Deskbar itself (`quit application/x-vnd.Be-TSKB`) - a
+# full reboot was required the first time this directory was created. A
+# rebuild/reinstall after that first reboot does not require another one,
+# since the directory (and packagefs's merge of it) already exists.
+#
+# data/ is kept under the separate non-packaged/data/RWorldRadio convention
+# (StationCache's own search path, unrelated to the Deskbar menu) rather
+# than next to the binary, since StationCache looks there explicitly - see
+# README.md.
 set -e
 
 cd "$(dirname "$0")"
@@ -24,14 +36,23 @@ fi
 PROJECT_DIR=$PWD
 BINARY="$PROJECT_DIR/$BINARY"
 DATA_DIR="$PROJECT_DIR/data"
+DESKBAR_APPS_DIR=/boot/system/non-packaged/data/deskbar/menu/Applications
 
-mkdir -p ~/config/non-packaged/apps
+mkdir -p "$DESKBAR_APPS_DIR"
 mkdir -p ~/config/non-packaged/data
 
-ln -sf "$BINARY" ~/config/non-packaged/apps/rworldradio
+ln -sf "$BINARY" "$DESKBAR_APPS_DIR/RWorldRadio"
 ln -sf "$DATA_DIR" ~/config/non-packaged/data/RWorldRadio
 
 echo "Installed:"
-echo "  ~/config/non-packaged/apps/rworldradio -> $BINARY"
+echo "  $DESKBAR_APPS_DIR/RWorldRadio -> $BINARY"
 echo "  ~/config/non-packaged/data/RWorldRadio -> $DATA_DIR"
-echo "R World Radio should now appear in Deskbar's Applications menu."
+echo
+if [ -e /boot/system/data/deskbar/menu/Applications/RWorldRadio ]; then
+	echo "R World Radio should now appear in Deskbar's Applications menu."
+else
+	echo "NOTE: if this is the first time installing, you likely need to"
+	echo "reboot once before it shows up in Deskbar's Applications menu -"
+	echo "the packagefs merge of a newly created non-packaged directory"
+	echo "was not observed to happen live, even after restarting Deskbar."
+fi

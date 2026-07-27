@@ -65,12 +65,17 @@ make
 내부적으로는 이 작업을 합니다:
 
 ```
-mkdir -p ~/config/non-packaged/apps
-ln -s /path/to/objects.*/rworldradio ~/config/non-packaged/apps/rworldradio
+mkdir -p /boot/system/non-packaged/data/deskbar/menu/Applications
+ln -s /path/to/objects.*/rworldradio /boot/system/non-packaged/data/deskbar/menu/Applications/RWorldRadio
+mkdir -p ~/config/non-packaged/data
 ln -s /path/to/data ~/config/non-packaged/data/RWorldRadio
 ```
 
-Haiku의 Deskbar Applications 메뉴는 `~/config/non-packaged/apps/`에 있는 항목을 그대로 나열하므로, 이 위치에서는 `data/`가 바이너리 옆에 있으면 안 됩니다(메뉴에 엉뚱한 폴더 항목으로 나타남) - 대신 병렬 구조인 `non-packaged/data/RWorldRadio` 규칙을 사용합니다. (재빌드 시 다시 복사할 필요가 없도록 심볼릭 링크를 사용합니다; 프로젝트 디렉터리를 유지하고 싶지 않다면 `cp`/`cp -r`로 그냥 복사해도 됩니다.)
+Deskbar의 Applications 메뉴는 실제로는 `/boot/system/data/deskbar/menu/Applications/` 아래 심볼릭 링크들의 모음입니다 (OpenTTD 같은 기본 설치 항목도 여기 링크로 들어가 있습니다). 이 경로 자체는 packagefs로 마운트된 읽기 전용 영역이라, non-packaged 추가 항목은 병렬 구조인 `/boot/system/non-packaged/data/deskbar/menu/Applications/`에 넣으면 packagefs가 읽기 전용 뷰에 병합해줍니다. **실제 시스템에서 확인한 결과: 이 병합은 라이브로 반영되지 않으며, Deskbar를 재시작(`quit application/x-vnd.Be-TSKB`)해도 마찬가지입니다 - 이 디렉터리를 처음 만들 때는 재부팅이 필요합니다.** 그 이후의 재빌드/재설치는 재부팅 없이 반영됩니다.
+
+(`~/config/non-packaged/apps/`는 다른 문서에서 언급되는 것과 달리 이 메뉴를 구동하지 *않습니다* - 실제로 안 되는 것을 확인했습니다.)
+
+`data/`는 바이너리 옆이 아니라 별도의 `non-packaged/data/RWorldRadio` 규칙(Deskbar 메뉴와는 무관한, `StationCache` 자체의 탐색 경로)을 씁니다. (재빌드 시 다시 복사할 필요가 없도록 심볼릭 링크를 사용합니다; 프로젝트 디렉터리를 유지하고 싶지 않다면 `cp`/`cp -r`로 그냥 복사해도 됩니다.)
 
 ## 데이터셋 최신 상태로 유지하기
 

@@ -64,12 +64,17 @@ Builds the app (via `make`) and symlinks it into Deskbar's Applications menu. Re
 Under the hood, this is just:
 
 ```
-mkdir -p ~/config/non-packaged/apps
-ln -s /path/to/objects.*/rworldradio ~/config/non-packaged/apps/rworldradio
+mkdir -p /boot/system/non-packaged/data/deskbar/menu/Applications
+ln -s /path/to/objects.*/rworldradio /boot/system/non-packaged/data/deskbar/menu/Applications/RWorldRadio
+mkdir -p ~/config/non-packaged/data
 ln -s /path/to/data ~/config/non-packaged/data/RWorldRadio
 ```
 
-Haiku's Deskbar Applications menu lists whatever is in `~/config/non-packaged/apps/` directly, so `data/` must NOT sit next to the binary there (it would show up as a spurious folder entry in the menu) - it goes in the parallel `non-packaged/data/RWorldRadio` convention instead. (Symlinks so a rebuild doesn't need re-copying; plain `cp`/`cp -r` works too if you'd rather not keep the project directory around.)
+Deskbar's Applications menu is a plain directory of symlinks at `/boot/system/data/deskbar/menu/Applications/` (this is where preinstalled entries like OpenTTD live too), but that path is read-only (packagefs) - a non-packaged addition goes in the mirrored `/boot/system/non-packaged/data/deskbar/menu/Applications/` directory instead, which packagefs merges into the read-only view. **Confirmed on a real system: that merge is not picked up live, even after restarting Deskbar (`quit application/x-vnd.Be-TSKB`) - a reboot is needed the first time this directory is created.** A rebuild/reinstall after that doesn't need another reboot.
+
+(`~/config/non-packaged/apps/` does *not* drive this menu, despite what you might read elsewhere - confirmed not to work.)
+
+`data/` is kept under the separate `non-packaged/data/RWorldRadio` convention (`StationCache`'s own search path, unrelated to the Deskbar menu) rather than next to the binary. (Symlinks so a rebuild doesn't need re-copying; plain `cp`/`cp -r` works too if you'd rather not keep the project directory around.)
 
 ## Keeping the dataset current
 
