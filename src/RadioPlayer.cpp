@@ -459,10 +459,17 @@ RadioPlayer::RunSetup(SessionPtr session, Station station, uint64 generation)
 		}
 		session->mediaFile = new BMediaFile(session->hlsIo);
 	} else {
-		// Explicit second argument: this Haiku SDK's Url.h declares both
-		// BUrl(const char*, bool = true) and a legacy BUrl(const char*)
-		// overload, which is ambiguous with a single argument.
+		// Some Haiku SDKs (the legacy x86/gcc2 secondary arch) declare BOTH
+		// BUrl(const char*, bool = true) and BUrl(const char*), making a
+		// single-argument call ambiguous - others (the primary x86_64/gcc13
+		// SDK) only have the single-argument form, where a second bool
+		// argument is a hard error. HAIKU_BURL_HAS_BOOL_CTOR is set by the
+		// Makefile per-SDK - see its comment.
+#ifdef HAIKU_BURL_HAS_BOOL_CTOR
 		BUrl url(streamUrl.c_str(), true);
+#else
+		BUrl url(streamUrl.c_str());
+#endif
 		if (!url.IsValid()) {
 			if (IsCurrent(generation))
 				EmitStatus(kError, station.name, "invalid stream URL");

@@ -61,6 +61,13 @@ LIBS = be tracker network bnetapi media \
 	/boot/system/develop/lib/libstdc++.r4.so \
 	/boot/system/develop/lib/libnetservices.a \
 	/boot/system/develop/lib/libshared.a
+# This SDK's Url.h declares BOTH BUrl(const char*) and BUrl(const char*,
+# bool = true), making a single-argument BUrl(str) call ambiguous - the
+# primary x86_64/gcc13 SDK's Url.h only has the single-argument form, where
+# passing a second bool argument is instead a hard error (no such
+# overload). RadioPlayer.cpp/NetworkFetch.cpp use this define to pick
+# whichever call this SDK actually supports.
+HAIKU_BURL_CTOR_DEFINE = HAIKU_BURL_HAS_BOOL_CTOR
 endif
 
 LIBPATHS =
@@ -78,7 +85,7 @@ SYSTEM_INCLUDE_PATHS = /boot/system/develop/headers/private/netservices \
 LOCAL_INCLUDE_PATHS =
 OPTIMIZE := FULL
 LOCALES =
-DEFINES =
+DEFINES = $(HAIKU_BURL_CTOR_DEFINE)
 WARNINGS = ALL
 SYMBOLS =
 DEBUGGER =

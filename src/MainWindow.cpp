@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 
+#include <cctype>
 #include <cstdio>
 #include <exception>
 
@@ -7,15 +8,13 @@
 #include <Button.h>
 #include <LayoutBuilder.h>
 #include <ListView.h>
-#include <Menu.h>
-#include <MenuBar.h>
-#include <MenuItem.h>
 #include <Message.h>
 #include <MessageRunner.h>
 #include <OS.h>
 #include <ScrollView.h>
 #include <StringItem.h>
 #include <StringView.h>
+#include <TextControl.h>
 
 #include "LevelMeterView.h"
 #include "StationCache.h"
@@ -61,6 +60,24 @@ FormatCodecBitrate(const Station& station)
 	return text;
 }
 
+std::string
+ToLower(const std::string& s)
+{
+	std::string out = s;
+	for (size_t i = 0; i < out.size(); i++)
+		out[i] = static_cast<char>(tolower(static_cast<unsigned char>(out[i])));
+	return out;
+}
+
+// Case-insensitive substring match; an empty needle matches everything (no
+// filter typed yet).
+bool
+MatchesFilter(const std::string& haystack, const std::string& lowerNeedle)
+{
+	return lowerNeedle.empty()
+		|| ToLower(haystack).find(lowerNeedle) != std::string::npos;
+}
+
 } // namespace
 
 MainWindow::MainWindow()
@@ -69,6 +86,8 @@ MainWindow::MainWindow()
 		B_ASYNCHRONOUS_CONTROLS),
 	fCountryListView(NULL),
 	fStationListView(NULL),
+	fCountryFilterView(NULL),
+	fStationFilterView(NULL),
 	fStatusView(NULL),
 	fStopButton(NULL),
 	fNowPlayingView(NULL),
@@ -77,11 +96,6 @@ MainWindow::MainWindow()
 	fLevelRunner(NULL),
 	fPlayer(BMessenger(this))
 {
-	BMenuBar* menuBar = new BMenuBar("menubar");
-	BMenu* fileMenu = new BMenu("File");
-	fileMenu->AddItem(new BMenuItem("Quit", new BMessage(B_QUIT_REQUESTED), 'Q'));
-	menuBar->AddItem(fileMenu);
-
 	fCountryListView = new BListView("countries", B_SINGLE_SELECTION_LIST);
 	fCountryListView->SetSelectionMessage(new BMessage(kMsgCountrySelected));
 	BScrollView* countryScroll = new BScrollView("countryScroll",
@@ -92,6 +106,15 @@ MainWindow::MainWindow()
 	BScrollView* stationScroll = new BScrollView("stationScroll",
 		fStationListView, 0, false, true);
 
+	// Live, case-insensitive substring filters over the two lists - fire on
+	// every keystroke via the modification message (not the invocation
+	// message, which would only fire on Enter). No label: the list right
+	// below each field already makes clear what typing here narrows down.
+	fCountryFilterView = new BTextControl("countryFilter", "", "", NULL);
+	fCountryFilterView->SetModificationMessage(new BMessage(kMsgCountryFilterChanged));
+	fStationFilterView = new BTextControl("stationFilter", "", "", NULL);
+	fStationFilterView->SetModificationMessage(new BMessage(kMsgStationFilterChanged));
+
 	fStopButton = new BButton("stop", "\xE2\x96\xA0" /* U+25A0 BLACK SQUARE */,
 		new BMessage(kMsgStopPlayback));
 	fNowPlayingView = new BStringView("nowPlaying", "Stopped");
@@ -99,11 +122,19 @@ MainWindow::MainWindow()
 	fLevelMeter = new LevelMeterView("level");
 	fStatusView = new BStringView("status", "Loading stations...");
 
+	BView* countryPanel = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
+		.Add(fCountryFilterView)
+		.Add(countryScroll)
+		.View();
+	BView* stationPanel = BLayoutBuilder::Group<>(B_VERTICAL, B_USE_SMALL_SPACING)
+		.Add(fStationFilterView)
+		.Add(stationScroll)
+		.View();
+
 	BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
-		.Add(menuBar)
 		.AddGroup(B_HORIZONTAL, B_USE_DEFAULT_SPACING)
-			.Add(countryScroll, 1)
-			.Add(stationScroll, 2)
+			.Add(countryPanel, 1)
+			.Add(stationPanel, 2)
 			.SetInsets(B_USE_WINDOW_INSETS)
 		.End()
 		.AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
@@ -191,41 +222,64 @@ MainWindow::LoadThreadEntry(void* cookie)
 	return B_OK;
 }
 
+// Rebuilds the country list from fStationsByCountry, showing only entries
+// matching fCountryFilterView's text (case-insensitive substring, live as
+// the user types). Filtering only changes what's visible here - the
+// authoritative selection (fSelectedCountryName) and the station panel are
+// untouched even if the selected country's row is filtered out of view, the
+// same as the other ports (see ui.rs) - only clicking a row changes it (see
+// the kMsgCountrySelected handler in MessageReceived).
 void
 MainWindow::PopulateCountries()
 {
 	fCountryListView->MakeEmpty();
-	fStationListView->MakeEmpty();
-	for (std::map<std::string, std::vector<Station> >::const_iterator it
-			= fStationsByCountry.begin(); it != fStationsByCountry.end(); ++it)
-		fCountryListView->AddItem(new BStringItem(it->first.c_str()));
 
-	if (fCountryListView->CountItems() > 0) {
+	std::string needle = ToLower(fCountryFilterView->Text());
+	int32 selectIndex = -1;
+
+	for (std::map<std::string, std::vector<Station> >::const_iterator it
+			= fStationsByCountry.begin(); it != fStationsByCountry.end(); ++it) {
+		const std::string& name = it->first;
+		if (!MatchesFilter(name, needle))
+			continue;
+		fCountryListView->AddItem(new BStringItem(name.c_str()));
+		if (name == fSelectedCountryName)
+			selectIndex = fCountryListView->CountItems() - 1;
+	}
+
+	if (selectIndex >= 0) {
+		fCountryListView->Select(selectIndex);
+	} else if (fSelectedCountryName.empty() && fCountryListView->CountItems() > 0) {
+		// Nothing selected yet (first population after a successful load) -
+		// default to the first country, same as before filtering existed.
 		fCountryListView->Select(0);
-		PopulateStationsForSelectedCountry();
+		BStringItem* item = static_cast<BStringItem*>(fCountryListView->ItemAt(0));
+		if (item != NULL) {
+			fSelectedCountryName = item->Text();
+			PopulateStationsForSelectedCountry();
+		}
 	}
 }
 
+// Rebuilds the station list for fSelectedCountryName, showing only entries
+// matching fStationFilterView's text (case-insensitive substring, live as
+// the user types).
 void
 MainWindow::PopulateStationsForSelectedCountry()
 {
 	fStationListView->MakeEmpty();
 
-	int32 index = fCountryListView->CurrentSelection();
-	if (index < 0)
-		return;
-	BStringItem* countryItem
-		= static_cast<BStringItem*>(fCountryListView->ItemAt(index));
-	if (countryItem == NULL)
-		return;
-
 	std::map<std::string, std::vector<Station> >::const_iterator it
-		= fStationsByCountry.find(countryItem->Text());
+		= fStationsByCountry.find(fSelectedCountryName);
 	if (it == fStationsByCountry.end())
 		return;
 
-	for (size_t i = 0; i < it->second.size(); i++)
-		fStationListView->AddItem(new StationItem(it->second[i]));
+	std::string needle = ToLower(fStationFilterView->Text());
+	for (size_t i = 0; i < it->second.size(); i++) {
+		const Station& station = it->second[i];
+		if (MatchesFilter(station.name, needle))
+			fStationListView->AddItem(new StationItem(station));
+	}
 }
 
 void
@@ -233,6 +287,28 @@ MainWindow::MessageReceived(BMessage* message)
 {
 	switch (message->what) {
 		case kMsgCountrySelected:
+		{
+			int32 index = fCountryListView->CurrentSelection();
+			if (index < 0)
+				break;
+			BStringItem* item
+				= static_cast<BStringItem*>(fCountryListView->ItemAt(index));
+			if (item == NULL)
+				break;
+			std::string name = item->Text();
+			if (name != fSelectedCountryName) {
+				fSelectedCountryName = name;
+				fStationFilterView->SetText("");
+				PopulateStationsForSelectedCountry();
+			}
+			break;
+		}
+
+		case kMsgCountryFilterChanged:
+			PopulateCountries();
+			break;
+
+		case kMsgStationFilterChanged:
 			PopulateStationsForSelectedCountry();
 			break;
 

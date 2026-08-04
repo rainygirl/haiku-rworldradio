@@ -14,8 +14,12 @@
 # Confirmed on real hardware/QEMU: that merge is NOT picked up live, even
 # after restarting Deskbar itself (`quit application/x-vnd.Be-TSKB`) - a
 # full reboot was required the first time this directory was created. A
-# rebuild/reinstall after that first reboot does not require another one,
-# since the directory (and packagefs's merge of it) already exists.
+# plain rebuild after that first reboot does not require another one, AS
+# LONG AS the RWorldRadio symlink itself is left untouched - re-running
+# `ln -sf` on it (even pointing at the exact same target path) unlinks and
+# recreates it with a new inode, which was observed to un-merge it from the
+# read-only view again until the next reboot. So this script only touches
+# the symlink when it doesn't already point at the right target.
 #
 # data/ is kept under the separate non-packaged/data/RWorldRadio convention
 # (StationCache's own search path, unrelated to the Deskbar menu) rather
@@ -41,8 +45,15 @@ DESKBAR_APPS_DIR=/boot/system/non-packaged/data/deskbar/menu/Applications
 mkdir -p "$DESKBAR_APPS_DIR"
 mkdir -p ~/config/non-packaged/data
 
-ln -sf "$BINARY" "$DESKBAR_APPS_DIR/RWorldRadio"
-ln -sf "$DATA_DIR" ~/config/non-packaged/data/RWorldRadio
+DESKBAR_LINK="$DESKBAR_APPS_DIR/RWorldRadio"
+if [ "$(readlink "$DESKBAR_LINK" 2>/dev/null)" != "$BINARY" ]; then
+	ln -sf "$BINARY" "$DESKBAR_LINK"
+fi
+
+DATA_LINK=~/config/non-packaged/data/RWorldRadio
+if [ "$(readlink "$DATA_LINK" 2>/dev/null)" != "$DATA_DIR" ]; then
+	ln -sf "$DATA_DIR" "$DATA_LINK"
+fi
 
 echo "Installed:"
 echo "  $DESKBAR_APPS_DIR/RWorldRadio -> $BINARY"
