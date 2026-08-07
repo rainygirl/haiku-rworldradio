@@ -18,17 +18,24 @@ resource app_version {
 };
 
 /*
- * Simple flat-color radio pictogram (body + speaker grille + tuning dial +
- * antenna), hand-encoded as raw HVIF bytes - see DEVELOPING_GUIDE.md for how
- * this was built and verified (round-tripped through an independent decoder
- * before being committed here, since there was no way to render it directly
- * from outside a Haiku environment). If this doesn't look right once built,
- * that verification only proves the bytes are well-formed HVIF, not that
- * the artwork looks good - regenerate via tools/make_icon.py and adjust the
- * shape coordinates/colors there.
+ * A flat-shaded radio drawn as an isometric box - top, left and right faces
+ * meeting at the near corner, dial and knobs on one flank, speaker grille on
+ * the other, antenna leaning out of the top. That is the axis the rest of the
+ * R apps sit on, and the axis BeOS icons use.
+ *
+ * Do not edit the bytes below. They come from tools/make_icon.py, which
+ * rewrites this block in place; change the shape coordinates and colours
+ * there and re-run it. The script only guarantees well-formed HVIF - whether
+ * the artwork reads is a question for Tracker at 16 and 32 px.
  */
 resource vector_icon {
-	$"6E63696603031E284603D7D7DC03E68C28040A0428345834585428540A042E3A42"
-	$"3A424E2E4E0A04483C503C504448440A044C344E3456245424040A000100000A01"
-	$"0101000A020102000A00010300"
+	$"6E6369660801D6B27AFF01A2875CFF016F5C3FFF01B0B6BEFF013A322AFF0196"
+	$"7E5CFF01F4EEDCFF01C63E2EFF0F0A043D2F4030282224210A0426384045405A"
+	$"264D0A045A384045405A5A4D0A04402B5A38404526380A04573D4A434A52574B"
+	$"0A0E304B304D2F4D2E4D2C4D2B4B2A4A29482A472B462C462E472F48304A0A0E"
+	$"3A5039513852375235513450334E334D334B344B354B374B384D394E0A04563D"
+	$"4B434B44563F0A0456404B464B4756420A0456434B494B4A56450A0456464B4B"
+	$"4B4D56480A0456494B4E4B50564A0A043B334A3A453D36360A04293C3D473D4D"
+	$"29430A043643374437493649080A030100000A010101000A020102000A000103"
+	$"000A0403040506000A05060708090A0B0C000A06010D000A07010E00"
 };
