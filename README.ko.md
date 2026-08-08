@@ -1,3 +1,5 @@
+<img src="icon.png" width="64" align="left" alt="">
+
 # R World Radio
 
 *[English version](README.md)*
