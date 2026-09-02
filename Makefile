@@ -73,10 +73,13 @@ endif
 
 # HttpAudioIO needs to talk TLS directly (see its header comment for why -
 # short version: this Haiku build's own Network Kit can't do https at all).
-# The arm64 bootstrap SDK has no openssl devel package yet, so detect the
-# headers rather than assuming they're there - HttpAudioIO.cpp falls back
-# to its (non-working, but always buildable) BUrlRequest path without them.
-ifneq ($(wildcard /boot/system/develop/headers/openssl/ssl.h),)
+# The arm64 bootstrap SDK has neither the openssl devel package nor the
+# openssl runtime package at all yet (confirmed: libssl.so isn't even in
+# that image), so detect both rather than assuming either is there -
+# headers alone would build fine and then fail to *load* for want of
+# libssl.so.3 at runtime. HttpAudioIO.cpp falls back to its (non-working,
+# but always buildable) BUrlRequest path without both.
+ifneq ($(and $(wildcard /boot/system/develop/headers/openssl/ssl.h),$(wildcard /boot/system/lib/libssl.so*)),)
 OPENSSL_DEFINE = HAIKU_HAS_OPENSSL
 OPENSSL_LIBS = ssl crypto
 endif

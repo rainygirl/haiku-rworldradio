@@ -20,12 +20,15 @@ INC="-Isrc -I/boot/system/develop/headers/private/netservices -I/boot/system/dev
 DEFS="-DHAIKU_BURL_HAS_BOOL_CTOR"
 
 # HttpAudioIO needs to talk TLS directly - see its header comment. The
-# arm64 bootstrap SDK has no openssl devel package yet (as of this
-# writing), so detect it rather than assume: without it, HttpAudioIO.cpp
-# falls back to its BUrlRequest path, which still builds but won't
-# actually get https streams playing until openssl devel headers land.
+# arm64 bootstrap SDK has neither the openssl devel package nor the
+# openssl runtime package yet (as of this writing, confirmed: no
+# libssl.so anywhere in the image), so detect both rather than assume
+# either: headers alone would build fine and then fail to *load* for
+# want of libssl.so.3 at runtime. Without both, HttpAudioIO.cpp falls
+# back to its BUrlRequest path, which still builds but won't actually
+# get https streams playing until openssl lands on this SDK.
 OPENSSL_LIBS=""
-if [ -f /boot/system/develop/headers/openssl/ssl.h ]; then
+if [ -f /boot/system/develop/headers/openssl/ssl.h ] && ls /boot/system/lib/libssl.so* >/dev/null 2>&1; then
 	DEFS="$DEFS -DHAIKU_HAS_OPENSSL"
 	OPENSSL_LIBS="-lssl -lcrypto"
 fi
