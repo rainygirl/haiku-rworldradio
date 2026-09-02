@@ -19,6 +19,17 @@ INC="-Isrc -I/boot/system/develop/headers/private/netservices -I/boot/system/dev
 # comment/#ifdef in src/RadioPlayer.cpp and src/NetworkFetch.cpp).
 DEFS="-DHAIKU_BURL_HAS_BOOL_CTOR"
 
+# HttpAudioIO needs to talk TLS directly - see its header comment. The
+# arm64 bootstrap SDK has no openssl devel package yet (as of this
+# writing), so detect it rather than assume: without it, HttpAudioIO.cpp
+# falls back to its BUrlRequest path, which still builds but won't
+# actually get https streams playing until openssl devel headers land.
+OPENSSL_LIBS=""
+if [ -f /boot/system/develop/headers/openssl/ssl.h ]; then
+	DEFS="$DEFS -DHAIKU_HAS_OPENSSL"
+	OPENSSL_LIBS="-lssl -lcrypto"
+fi
+
 for s in $SRCS; do
 	echo "cc $s"
 	g++ -c "src/$s.cpp" $INC $DEFS -O2 -Wall -Wno-multichar -Wno-ctor-dtor-privacy \
@@ -29,7 +40,7 @@ echo "link"
 g++ -o "$OBJDIR/rworldradio" "$OBJDIR"/*.o \
 	/boot/system/develop/lib/libnetservices.a \
 	/boot/system/develop/lib/libshared.a \
-	-lbe -ltracker -lnetwork -lbnetapi -lmedia -lstdc++ -lsupc++
+	-lbe -ltracker -lnetwork -lbnetapi -lmedia -lstdc++ -lsupc++ $OPENSSL_LIBS
 
 echo "resources"
 rc -o "$OBJDIR/app.rsrc" src/app.rdef

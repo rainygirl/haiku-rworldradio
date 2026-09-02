@@ -54,11 +54,11 @@ RSRCS =
 #   would itself fail with "cannot find -lsupc++".
 GCC_VERSION := $(shell g++ -dumpversion)
 ifeq ($(filter 2.%,$(GCC_VERSION)),)
-LIBS = be tracker network bnetapi media stdc++ supc++ \
+LIBS = be tracker network bnetapi media stdc++ supc++ $(OPENSSL_LIBS) \
 	/boot/system/develop/lib/libnetservices.a \
 	/boot/system/develop/lib/libshared.a
 else
-LIBS = be tracker network bnetapi media \
+LIBS = be tracker network bnetapi media $(OPENSSL_LIBS) \
 	/boot/system/develop/lib/libstdc++.r4.so \
 	/boot/system/develop/lib/libnetservices.a \
 	/boot/system/develop/lib/libshared.a
@@ -69,6 +69,16 @@ LIBS = be tracker network bnetapi media \
 # overload). RadioPlayer.cpp/NetworkFetch.cpp use this define to pick
 # whichever call this SDK actually supports.
 HAIKU_BURL_CTOR_DEFINE = HAIKU_BURL_HAS_BOOL_CTOR
+endif
+
+# HttpAudioIO needs to talk TLS directly (see its header comment for why -
+# short version: this Haiku build's own Network Kit can't do https at all).
+# The arm64 bootstrap SDK has no openssl devel package yet, so detect the
+# headers rather than assuming they're there - HttpAudioIO.cpp falls back
+# to its (non-working, but always buildable) BUrlRequest path without them.
+ifneq ($(wildcard /boot/system/develop/headers/openssl/ssl.h),)
+OPENSSL_DEFINE = HAIKU_HAS_OPENSSL
+OPENSSL_LIBS = ssl crypto
 endif
 
 LIBPATHS =
@@ -86,7 +96,7 @@ SYSTEM_INCLUDE_PATHS = /boot/system/develop/headers/private/netservices \
 LOCAL_INCLUDE_PATHS =
 OPTIMIZE := FULL
 LOCALES =
-DEFINES = $(HAIKU_BURL_CTOR_DEFINE)
+DEFINES = $(HAIKU_BURL_CTOR_DEFINE) $(OPENSSL_DEFINE)
 WARNINGS = ALL
 SYMBOLS =
 DEBUGGER =
