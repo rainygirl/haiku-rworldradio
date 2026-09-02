@@ -15,6 +15,7 @@
 #include <cstring>
 
 #include "HlsAdapterIO.h"
+#include "HttpAudioIO.h"
 #include "NetworkFetch.h"
 
 namespace {
@@ -48,6 +49,17 @@ IsHlsUrl(const std::string& url)
 	for (size_t i = 0; i < suffix.size(); i++)
 		suffix[i] = static_cast<char>(tolower(static_cast<unsigned char>(suffix[i])));
 	return suffix == ".m3u8";
+}
+
+bool
+IsHttpsUrl(const std::string& url)
+{
+	if (url.size() < 8)
+		return false;
+	std::string scheme = url.substr(0, 8);
+	for (size_t i = 0; i < scheme.size(); i++)
+		scheme[i] = static_cast<char>(tolower(static_cast<unsigned char>(scheme[i])));
+	return scheme == "https://";
 }
 
 size_t
@@ -150,6 +162,15 @@ BitsToFloat(int32 bits)
 // needs, and reader plugins silently refuse to even try ("no handler")
 // even when the underlying bytes are perfectly valid MP3/AAC. Letting
 // BMediaFile drive the network I/O itself sidesteps that entirely.
+//
+// That add-on only speaks plain http:// though - confirmed by hand against
+// several live stations that offer both an http:// and an https:// URL for
+// the same stream: the http:// one opens fine, the https:// one comes back
+// B_MEDIA_NO_HANDLER every time. So https:// direct URLs go through
+// HttpAudioIO instead (also a BAdapterIO, so it reports the same flags),
+// which fetches over the Network Kit's own BUrlRequest - the same one
+// NetworkFetch already uses successfully for https - the same way
+// HlsAdapterIO does for HLS.
 struct RadioPlayer::Session {
 	BMediaFile* mediaFile;
 	BMediaTrack* track;
@@ -161,6 +182,10 @@ struct RadioPlayer::Session {
 	// true for those two, never for the raw-BDataIO* constructor) - so
 	// unlike mediaFile, this needs to be deleted here, not by BMediaFile.
 	HlsAdapterIO* hlsIo;
+
+	// Only set for https:// direct (non-HLS) stations - see the comment
+	// above. Same ownership rules as hlsIo.
+	HttpAudioIO* httpIo;
 
 	std::string stationName;
 
@@ -176,6 +201,7 @@ struct RadioPlayer::Session {
 		track(NULL),
 		soundPlayer(NULL),
 		hlsIo(NULL),
+		httpIo(NULL),
 		levelBits(0)
 	{
 	}
@@ -192,10 +218,12 @@ struct RadioPlayer::Session {
 		if (mediaFile != NULL && track != NULL)
 			mediaFile->ReleaseTrack(track);
 		track = NULL;
-		delete mediaFile; // must go before hlsIo - it reads from hlsIo
+		delete mediaFile; // must go before hlsIo/httpIo - it reads from them
 		mediaFile = NULL;
 		delete hlsIo;
 		hlsIo = NULL;
+		delete httpIo;
+		httpIo = NULL;
 	}
 };
 
@@ -458,6 +486,26 @@ RadioPlayer::RunSetup(SessionPtr session, Station station, uint64 generation)
 			return;
 		}
 		session->mediaFile = new BMediaFile(session->hlsIo);
+	} else if (IsHttpsUrl(streamUrl)) {
+		session->httpIo = new HttpAudioIO(streamUrl);
+		// Same reasoning as the HLS branch above - BMediaFile(BDataIO*)
+		// never Opens() an arbitrary source itself, so that (which starts
+		// the worker thread and blocks until the first bytes arrive or the
+		// request fails) has to happen explicitly here.
+		status_t openErr = session->httpIo->Open();
+		if (openErr != B_OK) {
+			std::string reason = session->httpIo->InitError();
+			char detail[220];
+			snprintf(detail, sizeof(detail), "could not open stream: %s (0x%08lx)%s%s",
+				strerror(openErr), (long)openErr,
+				reason.empty() ? "" : " - ", reason.c_str());
+			delete session->httpIo;
+			session->httpIo = NULL;
+			if (IsCurrent(generation))
+				EmitStatus(kError, station.name, detail);
+			return;
+		}
+		session->mediaFile = new BMediaFile(session->httpIo);
 	} else {
 		// Some Haiku SDKs (the legacy x86/gcc2 secondary arch) declare BOTH
 		// BUrl(const char*, bool = true) and BUrl(const char*), making a

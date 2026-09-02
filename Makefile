@@ -15,7 +15,8 @@ SRCS = \
 	src/JsonValue.cpp \
 	src/M3u8Parser.cpp \
 	src/TsDemuxer.cpp \
-	src/HlsAdapterIO.cpp
+	src/HlsAdapterIO.cpp \
+	src/HttpAudioIO.cpp
 
 # app_signature/app_version.short_info (so Deskbar shows "R World Radio"
 # instead of the raw binary name) and the app icon - see src/app.rdef.
