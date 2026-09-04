@@ -18,6 +18,12 @@
 #include "HttpAudioIO.h"
 #include "NetworkFetch.h"
 
+#ifdef RWORLDRADIO_EMBEDDED_MP3
+#include "AacStreamDecoder.h"
+#include "Mp3StreamDecoder.h"
+#include "StreamSniffer.h"
+#endif
+
 namespace {
 
 // Trims trailing CR/LF/whitespace from a Tune.ashx text response, which is
@@ -187,6 +193,17 @@ struct RadioPlayer::Session {
 	// above. Same ownership rules as hlsIo.
 	HttpAudioIO* httpIo;
 
+#ifdef RWORLDRADIO_EMBEDDED_MP3
+	// Set instead of mediaFile/track on builds with no Media Kit decoder
+	// plugins (the arm64 bootstrap image): decodes the stream straight from
+	// httpIo in-process. Exactly one of these is non-NULL, chosen by sniffing
+	// the first bytes. Both read through sniffIo, which replays the sniffed
+	// prefix ahead of httpIo, so all three are deleted before httpIo below.
+	Mp3StreamDecoder* mp3Decoder;
+	AacStreamDecoder* aacDecoder;
+	PrefixedDataIO* sniffIo;
+#endif
+
 	std::string stationName;
 
 	// Updated on every PlayBufferProc call, polled from the UI thread via
@@ -202,12 +219,25 @@ struct RadioPlayer::Session {
 		soundPlayer(NULL),
 		hlsIo(NULL),
 		httpIo(NULL),
+#ifdef RWORLDRADIO_EMBEDDED_MP3
+		mp3Decoder(NULL),
+		aacDecoder(NULL),
+		sniffIo(NULL),
+#endif
 		levelBits(0)
 	{
 	}
 
 	~Session()
 	{
+#ifdef RWORLDRADIO_EMBEDDED_MP3
+		// Unblock a decoder read that may be waiting on httpIo before
+		// BSoundPlayer::Stop() waits for the play thread that drives it.
+		if (mp3Decoder != NULL)
+			mp3Decoder->RequestStop();
+		if (aacDecoder != NULL)
+			aacDecoder->RequestStop();
+#endif
 		// BSoundPlayer::Stop() blocks until its play thread is idle, so this
 		// is safe to do before releasing the track it was reading from.
 		if (soundPlayer != NULL)
@@ -220,6 +250,16 @@ struct RadioPlayer::Session {
 		track = NULL;
 		delete mediaFile; // must go before hlsIo/httpIo - it reads from them
 		mediaFile = NULL;
+#ifdef RWORLDRADIO_EMBEDDED_MP3
+		// Decoders read through sniffIo, which reads httpIo: tear down in
+		// that order so nothing is left reading a freed source.
+		delete mp3Decoder;
+		mp3Decoder = NULL;
+		delete aacDecoder;
+		aacDecoder = NULL;
+		delete sniffIo;
+		sniffIo = NULL;
+#endif
 		delete hlsIo;
 		hlsIo = NULL;
 		delete httpIo;
@@ -464,6 +504,93 @@ RadioPlayer::RunSetup(SessionPtr session, Station station, uint64 generation)
 	if (!IsCurrent(generation))
 		return;
 
+#ifdef RWORLDRADIO_EMBEDDED_MP3
+	// No Media Kit decoder plugins in this image (arm64 bootstrap): decode
+	// the stream in-process with the embedded MP3 decoder instead of handing
+	// it to BMediaFile, which would return B_MEDIA_NO_HANDLER. HttpAudioIO is
+	// the byte source for both http:// and https:// (its BUrlRequest fallback
+	// handles plain http here; https needs OpenSSL, which this build lacks).
+	// HLS is left to the BMediaFile path below - its playlist/segment handling
+	// isn't covered by this decoder.
+	if (!IsHlsUrl(streamUrl)) {
+		session->httpIo = new HttpAudioIO(streamUrl);
+		status_t openErr = session->httpIo->Open();
+		if (openErr != B_OK) {
+			std::string reason = session->httpIo->InitError();
+			char detail[220];
+			snprintf(detail, sizeof(detail), "could not open stream: %s (0x%08lx)%s%s",
+				strerror(openErr), (long)openErr,
+				reason.empty() ? "" : " - ", reason.c_str());
+			delete session->httpIo;
+			session->httpIo = NULL;
+			if (IsCurrent(generation))
+				EmitStatus(kError, station.name, detail);
+			return;
+		}
+
+		// Pick the decoder by looking at the stream's first bytes rather than
+		// trusting the URL or a Content-Type: stations mislabel both, and the
+		// two formats are cheap to tell apart (see StreamSniffer). The bytes
+		// consumed while sniffing are replayed through sniffIo so whichever
+		// decoder runs still sees the stream from the beginning.
+		std::string prefix;
+		StreamSniffer::Format detected
+			= StreamSniffer::Sniff(session->httpIo, prefix);
+		session->sniffIo = new PrefixedDataIO(prefix, session->httpIo);
+
+		status_t decErr = B_ERROR;
+		if (detected == StreamSniffer::kAacAdts) {
+			session->aacDecoder = new AacStreamDecoder(session->sniffIo);
+			decErr = session->aacDecoder->Open();
+			if (decErr != B_OK) {
+				delete session->aacDecoder;
+				session->aacDecoder = NULL;
+			}
+		} else if (detected == StreamSniffer::kMp3) {
+			session->mp3Decoder = new Mp3StreamDecoder(session->sniffIo);
+			decErr = session->mp3Decoder->Open();
+			if (decErr != B_OK) {
+				delete session->mp3Decoder;
+				session->mp3Decoder = NULL;
+			}
+		}
+
+		if (decErr != B_OK) {
+			if (IsCurrent(generation)) {
+				EmitStatus(kError, station.name, detected == StreamSniffer::kUnknown
+					? "unrecognised audio format (embedded decoders handle "
+						"MP3 and AAC)"
+					: "could not decode audio stream");
+			}
+			return;
+		}
+
+		if (!IsCurrent(generation))
+			return;
+
+		media_raw_audio_format format = session->aacDecoder != NULL
+			? session->aacDecoder->Format() : session->mp3Decoder->Format();
+		BSoundPlayer* player = new BSoundPlayer(&format, station.name.c_str(),
+			&RadioPlayer::PlayBufferProc, NULL, session.Get());
+		if (player->InitCheck() != B_OK) {
+			delete player;
+			if (IsCurrent(generation))
+				EmitStatus(kError, station.name, "could not open audio output");
+			return;
+		}
+		session->soundPlayer = player;
+
+		if (!IsCurrent(generation))
+			return; // superseded while buffering; let it be torn down
+
+		player->SetVolume(1.0);
+		player->Start();
+		player->SetHasData(true);
+		EmitStatus(kPlaying, station.name, "");
+		return;
+	}
+#endif // RWORLDRADIO_EMBEDDED_MP3
+
 	if (IsHlsUrl(streamUrl)) {
 		session->hlsIo = new HlsAdapterIO(streamUrl);
 		// BMediaFile(BDataIO*) never calls Open() on an arbitrary source -
@@ -599,16 +726,36 @@ RadioPlayer::PlayBufferProc(void* cookie, void* buffer, size_t size,
 	Session* session = static_cast<Session*>(cookie);
 	size_t sampleSize = BytesPerSample(format.format);
 	size_t frameSize = sampleSize * format.channel_count;
-	if (frameSize == 0 || session->track == NULL) {
+
+#ifdef RWORLDRADIO_EMBEDDED_MP3
+	bool haveSource = session->mp3Decoder != NULL || session->aacDecoder != NULL
+		|| session->track != NULL;
+#else
+	bool haveSource = session->track != NULL;
+#endif
+	if (frameSize == 0 || !haveSource) {
 		memset(buffer, 0, size);
 		atomic_set(&session->levelBits, FloatToBits(0.0f));
 		return;
 	}
 
-	int64 frameCount = static_cast<int64>(size / frameSize);
-	status_t err = session->track->ReadFrames(buffer, &frameCount);
-	size_t producedBytes = err == B_OK
-		? static_cast<size_t>(frameCount) * frameSize : 0;
+	size_t producedBytes;
+#ifdef RWORLDRADIO_EMBEDDED_MP3
+	if (session->mp3Decoder != NULL || session->aacDecoder != NULL) {
+		// Embedded decoders yield interleaved 16-bit PCM straight into buffer;
+		// clamp to whole frames so a short final read can't split a frame.
+		size_t got = session->aacDecoder != NULL
+			? session->aacDecoder->Read(buffer, size)
+			: session->mp3Decoder->Read(buffer, size);
+		producedBytes = (got / frameSize) * frameSize;
+	} else
+#endif
+	{
+		int64 frameCount = static_cast<int64>(size / frameSize);
+		status_t err = session->track->ReadFrames(buffer, &frameCount);
+		producedBytes = err == B_OK
+			? static_cast<size_t>(frameCount) * frameSize : 0;
+	}
 
 	if (producedBytes < size)
 		memset(static_cast<char*>(buffer) + producedBytes, 0, size - producedBytes);

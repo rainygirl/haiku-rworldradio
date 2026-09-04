@@ -16,10 +16,12 @@ SRCS = \
 	src/M3u8Parser.cpp \
 	src/TsDemuxer.cpp \
 	src/HlsAdapterIO.cpp \
-	src/HttpAudioIO.cpp
+	src/HttpAudioIO.cpp \
+	src/HttpClient.cpp
 
-# app_signature/app_version.short_info (so Deskbar shows "R World Radio"
-# instead of the raw binary name) and the app icon - see src/app.rdef.
+# app_signature, app_name_catalog_entry (mimeset turns it into the SYS:NAME
+# attribute, which is the name Deskbar's Applications menu sorts and shows -
+# "RWorldRadio") and the app icon - see src/app.rdef.
 RDEFS = src/app.rdef
 RSRCS =
 

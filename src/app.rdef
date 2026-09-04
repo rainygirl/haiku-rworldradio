@@ -1,6 +1,6 @@
 resource app_signature "application/x-vnd.RWorldRadio-Radio";
 
-resource app_name_catalog_entry "x-vnd.RWorldRadio-Radio:System name:R World Radio";
+resource app_name_catalog_entry "x-vnd.RWorldRadio-Radio:System name:RWorldRadio";
 
 resource app_version {
 	major	= 1,

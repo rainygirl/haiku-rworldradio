@@ -1,6 +1,9 @@
 #include "NetworkFetch.h"
 
+#include "HttpClient.h"
+
 #include <cstdio>
+#include <cstring>
 
 #include <DataIO.h>
 #include <Errors.h>
@@ -44,6 +47,29 @@ namespace NetworkFetch {
 Result Get(const std::string& url)
 {
 	Result result;
+
+#ifdef HAIKU_HAS_OPENSSL
+	// On builds where OpenSSL is available, route https:// through it
+	// directly rather than through BUrlRequest: this SDK's Network Kit
+	// (libnetservices) has zero SSL symbols linked in - confirmed by hand,
+	// same root cause documented in HttpAudioIO.h - so BUrlRequest can't do
+	// https at all here. http:// still goes through BUrlRequest below (it
+	// already handles redirects and chunked/close framing correctly there,
+	// and reuses the Kit's own connection handling rather than bypassing
+	// it unnecessarily). GetBody() follows redirects itself, including a
+	// redirect that crosses from http to https or back.
+	if (strncmp(url.c_str(), "https://", 8) == 0) {
+		std::string body;
+		int status = 0;
+		std::string error;
+		bool ok = HttpClient::GetBody(url, body, status, error);
+		result.httpStatus = status;
+		result.body = body;
+		result.ok = ok && !body.empty();
+		result.error = ok ? std::string() : error;
+		return result;
+	}
+#endif
 
 	// Some Haiku SDKs (the legacy x86/gcc2 secondary arch) declare BOTH
 	// BUrl(const char*, bool = true) and BUrl(const char*), making a
