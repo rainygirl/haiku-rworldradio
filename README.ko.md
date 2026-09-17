@@ -10,6 +10,27 @@
 
 > **Haiku OS 전용입니다.** 이 앱은 Haiku 고유 API(Media Kit, 클래식 Network Kit, app_info/BEntry, BAdapterIO)를 직접 사용하므로 macOS, Linux, Windows에서는 빌드도 실행도 되지 않습니다. 실제 Haiku x86_64 nightly(gcc13)를 QEMU에서 구동하여 빌드/검증했습니다.
 
+## pkgman으로 설치
+
+| Haiku | 저장소 추가 |
+| --- | --- |
+| 32비트 x86 (x86_gcc2) | `pkgman add-repo https://pkgman.rainygirl.com/x86_gcc2` |
+| x86_64 | `pkgman add-repo https://pkgman.rainygirl.com/x86_64` |
+| arm64 | `pkgman add-repo http://pkgman.rainygirl.com/arm64` |
+
+```sh
+pkgman install rworldradio
+```
+
+Deskbar의 Applications 메뉴에 RWorldRadio로 나타납니다.
+
+`pkgman add-repo`가 `Operation not supported`로 실패하면 그 이미지의 네트워크 킷에
+TLS가 없는 것입니다. 주소의 `https://`를 `http://`로 바꿔 쓰세요.
+
+x86_64와 arm64 패키지는 `tools/cross-build.sh`(Docker)로 크로스 컴파일하며,
+바이너리는 `dist/<arch>/`에 남고 [pkgman-repo](https://pkgman.rainygirl.com)의
+레시피가 이를 패키징합니다.
+
 ## 구성
 
 ```
@@ -31,6 +52,7 @@ test/
   test_m3u8_parser.cpp          실제 m3u8 마스터/미디어 플레이리스트 테스트
 tools/
   update_stations_db.py     radio-browser로부터 data/ 를 갱신 - 앱 자체 기능이 아니며 개발 머신에서 실행 (아래 참고)
+  cross-build.sh            x86_64/arm64용 dist/<arch>/rworldradio를 크로스 컴파일 (Docker) - pkgman 레시피가 사용
 data/
   countries.json            인덱스: [{name, file, count}, ...]
   countries/<slug>.json     국가별 방송국 배열

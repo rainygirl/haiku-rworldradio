@@ -10,6 +10,27 @@ Native internet radio player for **Haiku OS** (BeAPI). Reads a pre-built, bundle
 
 > **Haiku OS only.** This app uses Haiku-specific APIs (Media Kit, the classic Network Kit, app_info/BEntry, BAdapterIO) directly and will not build or run on macOS, Linux, or Windows. It has been built and verified running on a real Haiku x86_64 nightly (gcc13) in QEMU.
 
+## Install with pkgman
+
+| Haiku | Add the repository |
+| --- | --- |
+| 32-bit x86 (x86_gcc2) | `pkgman add-repo https://pkgman.rainygirl.com/x86_gcc2` |
+| x86_64 | `pkgman add-repo https://pkgman.rainygirl.com/x86_64` |
+| arm64 | `pkgman add-repo http://pkgman.rainygirl.com/arm64` |
+
+```sh
+pkgman install rworldradio
+```
+
+It appears in Deskbar's Applications menu as RWorldRadio.
+
+If `pkgman add-repo` fails with `Operation not supported`, the network kit of
+that image has no TLS; use `http://` instead of `https://`.
+
+The x86_64 and arm64 packages are cross-compiled with `tools/cross-build.sh`
+(Docker), which leaves the binary in `dist/<arch>/` for the recipe in
+[pkgman-repo](https://pkgman.rainygirl.com) to package.
+
 ## Layout
 
 ```
@@ -30,6 +51,7 @@ test/
   test_m3u8_parser.cpp          standalone test, real m3u8 master/media playlists
 tools/
   update_stations_db.py     refreshes data/ from radio-browser - not part of the app, run on a dev machine (see below)
+  cross-build.sh            cross-compiles dist/<arch>/rworldradio for x86_64 or arm64 (Docker) - used by the pkgman recipe
 data/
   countries.json            index: [{name, file, count}, ...]
   countries/<slug>.json     per-country station arrays
