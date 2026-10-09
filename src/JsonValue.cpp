@@ -9,7 +9,7 @@ namespace {
 
 class Parser {
 public:
-	explicit Parser(const std::string& text) : fText(text), fPos(0) {}
+	explicit Parser(const std::string& text) : fText(text), fPos(0), fDepth(0) {}
 
 	JsonValue ParseDocument()
 	{
@@ -24,6 +24,21 @@ public:
 private:
 	const std::string& fText;
 	size_t fPos;
+	// Nesting is recursion: a hostile "[[[[..." would otherwise run the
+	// stack out and crash instead of failing to parse.
+	int fDepth;
+
+	void Enter()
+	{
+		if (++fDepth > 64)
+			Fail("nested too deeply");
+	}
+
+	JsonValue Leave(const JsonValue& value)
+	{
+		fDepth--;
+		return value;
+	}
 
 	void Fail(const std::string& message)
 	{
@@ -105,13 +120,14 @@ private:
 
 	JsonValue ParseObject()
 	{
+		Enter();
 		Expect('{');
 		JsonValue value;
 		value.type = JsonValue::Object;
 		SkipWhitespace();
 		if (Peek() == '}') {
 			Next();
-			return value;
+			return Leave(value);
 		}
 		while (true) {
 			SkipWhitespace();
@@ -129,18 +145,19 @@ private:
 				break;
 			Fail("expected ',' or '}' in object");
 		}
-		return value;
+		return Leave(value);
 	}
 
 	JsonValue ParseArray()
 	{
+		Enter();
 		Expect('[');
 		JsonValue value;
 		value.type = JsonValue::Array;
 		SkipWhitespace();
 		if (Peek() == ']') {
 			Next();
-			return value;
+			return Leave(value);
 		}
 		while (true) {
 			value.arrayValue.push_back(ParseValue());
@@ -152,7 +169,7 @@ private:
 				break;
 			Fail("expected ',' or ']' in array");
 		}
-		return value;
+		return Leave(value);
 	}
 
 	static void AppendUtf8(std::string& out, unsigned int codepoint)

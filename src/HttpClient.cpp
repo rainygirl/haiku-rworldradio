@@ -9,6 +9,7 @@
 #include <Socket.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+#include <openssl/x509v3.h>
 #endif
 
 namespace HttpClient {
@@ -112,6 +113,10 @@ ExtractHeader(const std::string& headers, const char* nameLower)
 
 namespace {
 
+// Playlists and station lists are small; a body past this is a broken or
+// hostile server, and reading it would only end in std::bad_alloc.
+const size_t kMaxBody = 64 * 1024 * 1024;
+
 // Thin cover over "read some bytes", whichever transport is in play, so the
 // header/body loops below don't need to branch on tls at every call site.
 struct Transport {
@@ -135,6 +140,8 @@ bool
 ReadExact(Transport& t, std::string& body, size_t count)
 {
 	char buf[4096];
+	if (count > kMaxBody)
+		return false;
 	while (body.size() < count) {
 		size_t want = count - body.size();
 		int n = t.Read(buf, want < sizeof(buf) ? want : sizeof(buf));
@@ -167,6 +174,8 @@ ReadChunked(Transport& t, std::string& leftover, std::string& outBody)
 		leftover.erase(0, lineEnd + 2);
 		if (chunkSize <= 0)
 			return true; // terminating 0-length chunk; ignore any trailer
+		if ((size_t)chunkSize > kMaxBody - outBody.size())
+			return false;
 		while (leftover.size() < (size_t)chunkSize + 2) {
 			char buf[4096];
 			int n = t.Read(buf, sizeof(buf));
@@ -215,14 +224,31 @@ GetBody(const std::string& url, std::string& outBody, int& outStatus,
 				outError = "SSL context init failed";
 				return false;
 			}
-			SSL_CTX_set_default_verify_paths(ctx);
+			// Station lists and playlists decide what the app connects to
+			// next, so the server's certificate is checked (Haiku's CA
+			// bundle, and the host name). Audio streams (HttpAudioIO) are
+			// left unchecked: any station is untrusted data anyway, and
+			// many stations' certificates would fail.
+			SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
+			if (SSL_CTX_load_verify_locations(ctx,
+					"/boot/system/data/ssl/CARootCertificates.pem", NULL) != 1)
+				SSL_CTX_set_default_verify_paths(ctx);
 			ssl = SSL_new(ctx);
 			SSL_set_fd(ssl, socket.Socket());
 			SSL_set_tlsext_host_name(ssl, parsed.host.c_str());
+			SSL_set1_host(ssl, parsed.host.c_str());
 			if (SSL_connect(ssl) != 1) {
-				char detail[64];
-				snprintf(detail, sizeof(detail), "TLS handshake failed (SSL error %d)",
-					SSL_get_error(ssl, 0));
+				char detail[96];
+				long verify = SSL_get_verify_result(ssl);
+				if (verify != X509_V_OK) {
+					snprintf(detail, sizeof(detail),
+						"certificate not trusted (%s)",
+						X509_verify_cert_error_string(verify));
+				} else {
+					snprintf(detail, sizeof(detail),
+						"TLS handshake failed (SSL error %d)",
+						SSL_get_error(ssl, 0));
+				}
 				outError = detail;
 				SSL_free(ssl);
 				SSL_CTX_free(ctx);
@@ -298,9 +324,14 @@ GetBody(const std::string& url, std::string& outBody, int& outStatus,
 			body = leftover;
 			char buf[4096];
 			int n;
-			while ((n = t.Read(buf, sizeof(buf))) > 0)
-				body.append(buf, n);
 			ok = true;
+			while ((n = t.Read(buf, sizeof(buf))) > 0) {
+				body.append(buf, n);
+				if (body.size() > kMaxBody) {
+					ok = false;
+					break;
+				}
+			}
 		}
 
 		if (ssl != NULL) { SSL_free(ssl); SSL_CTX_free(ctx); }
